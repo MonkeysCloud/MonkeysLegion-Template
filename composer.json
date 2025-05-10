@@ -1,0 +1,19 @@
+{
+  "name": "monkeyscloud/monkeyslegion-template",
+  "description": "MLView – the MonkeysLegion template engine with components, slots, and caching",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "MonkeysLegion\\Template\\": "src/"
+    }
+  },
+  "extra": {
+    "branch-alias": {
+      "dev-main": "1.0-dev"
+    }
+  }
+}
