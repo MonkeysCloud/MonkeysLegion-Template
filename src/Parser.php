@@ -17,26 +17,33 @@ class Parser
         return preg_replace_callback(
             '/<x-([a-zA-Z0-9_:-]+)([^>]*)>(.*?)<\/x-\\1>/s',
             function (array $m) {
-                $name   = $m[1];
-                $attrStr= $m[2];
-                $inner  = $m[3];
+                $name       = $m[1];
+                $attrStr    = $m[2];
+                $inner      = $m[3];
 
-                // build associative array of HTML‑style attributes
+                // Build associative array of HTML‑style attributes
                 $attrs = [];
-                if (preg_match_all('/([a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/', $attrStr, $matches, PREG_SET_ORDER)) {
+                if (preg_match_all(
+                    '/([a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/',
+                    $attrStr,
+                    $matches,
+                    PREG_SET_ORDER
+                )) {
                     foreach ($matches as $set) {
                         $attrs[$set[1]] = $set[2];
                     }
                 }
+
                 $attrsCode   = var_export($attrs, true);
                 $innerParsed = $this->parse($inner);
 
-                // Single PHP block ensures $__ml_attrs and $slotContent exist
+                // Initialize slots, extract attrs, capture inner into $slotContent, include component
                 $snippet = str_replace(
                     ['NAME', 'ATTRS', 'INNER'],
                     [$name, $attrsCode, $innerParsed],
                     <<<'PHP'
 <?php /* component: NAME */
+$slots = [];
 $__ml_attrs = ATTRS;
 extract($__ml_attrs, EXTR_SKIP);
 ob_start();
@@ -56,14 +63,13 @@ PHP
     private function parseSlots(string $source): string
     {
         return preg_replace_callback(
-            '/@slot\(["\'\"]([^\)]+)["\'\"]\)(.*?)@endslot/s',
+            '/@slot\([\'"]([^\'"\)]+)[\'"]\)(.*?)@endslot/s',
             function (array $m) {
                 $slot = $m[1];
                 $body = $this->parse($m[2]);
 
-                // ① ensure an array exists, ② then assign closure
-                return "<?php \$slots = \$slots ?? []; "
-                    . "\$slots['{$slot}'] = function() { ?>{$body}<?php }; ?>";
+                // Ensure $slots exists then assign closure
+                return "<?php \$slots = \$slots ?? []; \$slots['{$slot}'] = function() { ?>{$body}<?php }; ?>";
             },
             $source
         );
