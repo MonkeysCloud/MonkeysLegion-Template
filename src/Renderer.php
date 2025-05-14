@@ -84,15 +84,19 @@ final class Renderer
         $ast = $this->parser->parse($raw);
         $php = $this->compiler->compile($ast, $sourcePath);
 
-        extract($data, EXTR_SKIP);
-        ob_start();
-        // strip opening <?php tag if present
+        // strip PHP tags for eval mode
         if (str_starts_with($php, '<?php')) {
             $php = substr($php, strlen('<?php'));
         }
-        eval('?>' . $php);
+        if (str_ends_with($php, '?>')) {
 
 
+            $php = substr($php, 0, -strlen('?>'));
+        }
+
+        extract($data, EXTR_SKIP);
+        ob_start();
+        eval($php);
         return ob_get_clean();
     }
 
