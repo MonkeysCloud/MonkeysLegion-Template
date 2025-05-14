@@ -29,21 +29,21 @@ class Compiler
         // 2) Custom directive: @upper(expr)
         $source = preg_replace_callback(
             '/@upper\(([^)]+)\)/',
-            static fn($m) => "<?= htmlspecialchars(strtoupper({$m[1]}), ENT_QUOTES, 'UTF-8') ?>",
+            static fn(array $m) => "<?= htmlspecialchars(strtoupper({$m[1]}), ENT_QUOTES, 'UTF-8') ?>",
             $source
         );
 
         // 3) Escaped echo  {{ expr }}
         $source = preg_replace_callback(
             '/\{\{\s*(.+?)\s*\}\}/',
-            static fn($m) => "<?= htmlspecialchars({$m[1]}, ENT_QUOTES, 'UTF-8') ?>",
+            static fn(array $m) => "<?= htmlspecialchars({$m[1]}, ENT_QUOTES, 'UTF-8') ?>",
             $source
         );
 
         // 4) Raw echo  {!! expr !!}
         $source = preg_replace_callback(
             '/\{!!\s*(.+?)\s*!!\}/',
-            static fn($m) => "<?= {$m[1]} ?>",
+            static fn(array $m) => "<?= {$m[1]} ?>",
             $source
         );
 
