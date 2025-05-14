@@ -47,6 +47,13 @@ class Compiler
             $source
         );
 
+        // 5) Debugging: @dump(expr)
+        $source = preg_replace_callback(
+            '/@dump\((.+?)\)/',
+            fn($m) => "<?php echo '<pre>'; var_dump({$m[1]}); echo '</pre>'; ?>",
+            $source
+        );
+
         // 5) Prepend header for strict types + comment
         return "<?php\ndeclare(strict_types=1);\n/* Compiled from: {$path} */\n?>\n" . $source;
     }

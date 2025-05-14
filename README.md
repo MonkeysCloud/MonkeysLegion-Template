@@ -166,7 +166,7 @@ public function show(ServerRequestInterface $req): ResponseInterface
 ## 🔄 Caching & Hot‑Reload
 
 * **Location**: `var/cache/views`
-* **Auto‑invalidate**: checks template timestamp on each render.
+* **Auto‑invalidate**: checks the template timestamp on each render.
 * **Manual**: `php vendor/bin/ml cache:clear`
 
 ---
@@ -178,5 +178,8 @@ public function show(ServerRequestInterface $req): ResponseInterface
 * **Custom loaders**: swap `Loader` for DB‑backed or alternative filesystem layouts.
 
 ---
+
+## Debugging
+* **Debug variable in template**: `@dump($variable)`.
 
 Happy templating with MLView! 🚀
