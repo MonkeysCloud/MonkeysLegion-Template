@@ -7,50 +7,73 @@ namespace MonkeysLegion\Template;
 use RuntimeException;
 
 /**
- * Responsible for locating raw template files by name.
+ * Responsible for locating raw template files and compiled cache files by name.
  */
 class Loader
 {
-    private string $basePath;
-    private string $extension;
+    private string $sourcePath;
+    private string $cachePath;
+    private string $templateExtension;
 
     /**
-     * @param string $basePath   Directory where templates reside
-     * @param string $extension  File extension, e.g. '.ml.php'
+     * @param string $sourcePath         Directory where raw templates reside
+     * @param string $cachePath          Directory where compiled templates are stored
+     * @param string $templateExtension  Extension of raw template files (default ".ml.php")
      */
-    public function __construct(string $basePath, string $extension = '.ml.php')
-    {
-        $this->basePath  = rtrim($basePath, '/\\');
-        $this->extension = $extension;
+    public function __construct(
+        string $sourcePath,
+        string $cachePath,
+        string $templateExtension = '.ml.php'
+    ) {
+        $this->sourcePath        = rtrim($sourcePath, '/\\');
+        $this->cachePath         = rtrim($cachePath, '/\\');
+        $this->templateExtension = $templateExtension;
     }
 
     /**
-     * Get the full filesystem path for a given template name.
-     * E.g. 'users.index' → '/path/to/views/users/index.ml.php'
+     * Get the full filesystem path for a given template source.
+     * E.g. 'users.index' → '/views/users/index.ml.php'
      *
      * @param string $name  Dot-notated template name
      * @return string       Full file path
      * @throws RuntimeException if the file does not exist
      */
-    public function getPath(string $name): string
+    public function getSourcePath(string $name): string
     {
-        $relative = str_replace('.', DIRECTORY_SEPARATOR, $name) . $this->extension;
-        $path     = $this->basePath . DIRECTORY_SEPARATOR . $relative;
+        $relative = str_replace('.', DIRECTORY_SEPARATOR, $name)
+            . $this->templateExtension;
+        $path = $this->sourcePath . DIRECTORY_SEPARATOR . $relative;
 
         if (! is_file($path)) {
-            throw new RuntimeException("Template not found: {$path}");
+            throw new RuntimeException("Template source not found: {$path}");
         }
 
         return $path;
     }
 
     /**
-     * Retrieve the configured base directory for templates.
+     * Get the full filesystem path for the compiled template.
+     * E.g. 'users.index' → '/cache/users/index.php'
      *
-     * @return string
+     * @param string $name  Dot-notated template name
+     * @return string       Compiled file path (may not yet exist)
      */
-    public function getBasePath(): string
+    public function getCompiledPath(string $name): string
     {
-        return $this->basePath;
+        $relative = str_replace('.', DIRECTORY_SEPARATOR, $name) . '.php';
+        return $this->cachePath . DIRECTORY_SEPARATOR . $relative;
+    }
+
+    /**
+     * (Optional) Create the compiled directory if missing.
+     *
+     * @param string $path  File path to ensure directory exists for
+     */
+    public function ensureCompiledDir(string $path): void
+    {
+        $dir = dirname($path);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
     }
 }

@@ -7,34 +7,50 @@ namespace MonkeysLegion\Template;
 use RuntimeException;
 
 /**
- * Executes compiled PHP templates and captures their output.
+ * Renders MLView templates (parses, compiles, caches, and executes)
  */
-class Renderer
+final class Renderer
 {
+    public function __construct(
+        private Parser   $parser,
+        private Compiler $compiler,
+        private Loader   $loader
+    ) {}
+
     /**
-     * Render a compiled template file with provided data.
+     * Render a named template with given data.
      *
-     * @param string $compiledPath Full path to the compiled PHP template.
-     * @param array  $data         Variables to extract into the template scope.
-     * @return string              Rendered template output.
-     * @throws RuntimeException   If the compiled file does not exist.
+     * @param string $name  Template name (relative path without extension)
+     * @param array  $data  Variables to extract into template scope
+     * @return string       Rendered HTML output
+     * @throws RuntimeException on missing source file
      */
-    public function render(string $compiledPath, array $data = []): string
+    public function render(string $name, array $data = []): string
     {
-        if (! is_file($compiledPath)) {
-            throw new RuntimeException("Compiled template not found: {$compiledPath}");
+        // 1) Locate source and compiled paths
+        $sourcePath   = $this->loader->getSourcePath($name);
+        $compiledPath = $this->loader->getCompiledPath($name);
+
+        if (! is_file($sourcePath)) {
+            throw new RuntimeException("Template source not found: {$name}");
         }
 
-        // Extract variables into local scope, skipping conflicts
+        // 2) Compile if compiled missing or stale
+        if (! is_file($compiledPath)
+            || filemtime($compiledPath) < filemtime($sourcePath)
+        ) {
+            $raw   = file_get_contents($sourcePath);
+            $ast   = $this->parser->parse($raw);
+            $php   = $this->compiler->compile($ast, $sourcePath);
+            // Ensure compiled directory exists
+            @mkdir(dirname($compiledPath), 0755, true);
+            file_put_contents($compiledPath, $php);
+        }
+
+        // 3) Extract data and include compiled template
         extract($data, EXTR_SKIP);
-
-        // Start output buffering
         ob_start();
-
-        // Include the compiled template (it will echo content)
         include $compiledPath;
-
-        // Get buffer contents and clean
-        return (string) ob_get_clean();
+        return ob_get_clean();
     }
 }
