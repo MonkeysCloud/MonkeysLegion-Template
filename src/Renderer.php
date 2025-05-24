@@ -8,6 +8,7 @@ use RuntimeException;
 
 /**
  * Renders MLView templates (parses, compiles, caches, and executes)
+ * with support for layout inheritance via @extends, @section, and @yield.
  */
 final class Renderer
 {
@@ -17,13 +18,6 @@ final class Renderer
     private bool     $cacheEnabled;
     private string   $cacheDir;
 
-    /**
-     * @param Parser   $parser        Template parser (components, slots)
-     * @param Compiler $compiler      Template compiler (echoes, directives)
-     * @param Loader   $loader        Locates source + compiled files
-     * @param bool     $cacheEnabled  Toggle on-disk caching (default true)
-     * @param string   $cacheDir      Directory for cached templates (default var/cache/views)
-     */
     public function __construct(
         Parser   $parser,
         Compiler $compiler,
@@ -42,34 +36,48 @@ final class Renderer
 
     /**
      * Render a named template with given data.
+     * Handles @extends, @section, and @yield.
      *
-     * @param string $name Template name (dot-notated path without extension)
+     * @param string $name Template key (e.g., 'home')
      * @param array  $data Variables to extract into template scope
-     * @return string      Rendered HTML output
-     * @throws RuntimeException on missing source file
+     * @return string Rendered HTML output
+     * @throws RuntimeException when source is missing
      */
     public function render(string $name, array $data = []): string
     {
         $sourcePath   = $this->loader->getSourcePath($name);
-        $compiledPath = $this->getCompiledPath($name);
-
-        if (! is_file($sourcePath)) {
+        if (!is_file($sourcePath)) {
             throw new RuntimeException("Template source not found: {$sourcePath}");
         }
 
+        // Load raw source and extract sections
+        $raw = file_get_contents($sourcePath);
+        [$raw, $sections] = $this->extractSections($raw);
+
+        // If child extends a parent, merge
+        if (isset($sections['__extends'])) {
+            $parentName   = $sections['__extends'];
+            $parentPath   = $this->loader->getSourcePath($parentName);
+            if (!is_file($parentPath)) {
+                throw new RuntimeException("Parent template not found: {$parentPath}");
+            }
+            $parentRaw  = file_get_contents($parentPath);
+            $raw = $this->replaceYields($parentRaw, $sections);
+        }
+
+        // Compile and render, using cache if enabled
+        $compiledPath = $this->getCompiledPath($name);
+
         if ($this->cacheEnabled) {
-            // ensure cache directory exists
-            if (! is_dir($this->cacheDir)) {
+            if (!is_dir($this->cacheDir)) {
                 mkdir($this->cacheDir, 0755, true);
             }
 
-            // compile if missing or stale
-            if (! is_file($compiledPath)
+            if (!is_file($compiledPath)
                 || filemtime($sourcePath) > filemtime($compiledPath)
             ) {
-                $raw  = file_get_contents($sourcePath);
-                $ast  = $this->parser->parse($raw);
-                $php  = $this->compiler->compile($ast, $sourcePath);
+                $ast = $this->parser->parse($raw);
+                $php = $this->compiler->compile($ast, $sourcePath);
                 file_put_contents($compiledPath, $php);
             }
 
@@ -79,19 +87,16 @@ final class Renderer
             return ob_get_clean();
         }
 
-        // cache disabled → compile on the fly and eval
-        $raw = file_get_contents($sourcePath);
+        // No cache: compile and eval on the fly
         $ast = $this->parser->parse($raw);
         $php = $this->compiler->compile($ast, $sourcePath);
 
-        // strip PHP tags for eval mode
+        // Strip PHP tags for eval
         if (str_starts_with($php, '<?php')) {
-            $php = substr($php, strlen('<?php'));
+            $php = substr($php, 5);
         }
         if (str_ends_with($php, '?>')) {
-
-
-            $php = substr($php, 0, -strlen('?>'));
+            $php = substr($php, 0, -2);
         }
 
         extract($data, EXTR_SKIP);
@@ -101,20 +106,11 @@ final class Renderer
     }
 
     /**
-     * Determine file path for compiled template
-     */
-    private function getCompiledPath(string $name): string
-    {
-        $filename = str_replace(['.', '/'], '_', $name) . '.php';
-        return $this->cacheDir . DIRECTORY_SEPARATOR . $filename;
-    }
-
-    /**
-     * Clear all compiled template files.
+     * Clear cached compiled templates.
      */
     public function clearCache(): void
     {
-        if (! is_dir($this->cacheDir)) {
+        if (!is_dir($this->cacheDir)) {
             return;
         }
         foreach (glob($this->cacheDir . '/*.php') as $file) {
@@ -122,4 +118,72 @@ final class Renderer
         }
     }
 
+    /**
+     * Convert template name to compiled file path.
+     */
+    private function getCompiledPath(string $name): string
+    {
+        $file = str_replace(['.', '/'], '_', $name) . '.php';
+        return $this->cacheDir . DIRECTORY_SEPARATOR . $file;
+    }
+
+    /**
+     * Extract @extends and all @section blocks.
+     * Returns [modifiedSource, sectionsMap]
+     *
+     * @param string $source
+     * @return array{0:string,1:array<string,string>}
+     */
+    private function extractSections(string $source): array
+    {
+        $sections = [];
+
+        // Match @extends('base') or @extends("base")
+        if (preg_match(
+            '/@extends\((?:\'|")(?<view>.+?)(?:\'|")\)/',
+            $source,
+            $m
+        )) {
+            $sections['__extends'] = $m['view'];
+            // Remove only the first occurrence
+            $source = preg_replace(
+                '/@extends\((?:\'|").+?(?:\'|")\)/',
+                '',
+                $source,
+                1
+            );
+        }
+
+        // Match all @section('name') ... @endsection blocks
+        $sectionPattern = '/@section\((?:\'|")(?<name>.+?)(?:\'|")\)(?<content>.*?)@endsection/s';
+        $source = preg_replace_callback(
+            $sectionPattern,
+            function (array $m) use (&$sections) {
+                $sections[$m['name']] = $m['content'];
+                return '';
+            },
+            $source
+        );
+
+        return [$source, $sections];
+    }
+
+    /**
+     * Replace @yield('name') in the parent source with the corresponding section content.
+     *
+     * @param string               $source
+     * @param array<string,string> $sections
+     * @return string
+     */
+    private function replaceYields(string $source, array $sections): string
+    {
+        $pattern = '/@yield\((?:\'|")(?<section>.+?)(?:\'|")\)/';
+        return preg_replace_callback(
+            $pattern,
+            function (array $m) use ($sections) {
+                return $sections[$m['section']] ?? '';
+            },
+            $source
+        );
+    }
 }
