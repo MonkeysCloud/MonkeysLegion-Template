@@ -6,12 +6,12 @@ MLView is the built‑in, lightweight template engine for **MonkeysLegion**, des
 
 ## 🌟 Key Features
 
-* **Escaped output**: `{{ $var }}` → safe, HTML‑escaped data.
-* **Raw output**: `{!! $html !!}` → unescaped HTML (use responsibly).
-* **Components**: `<x-card title="...">...</x-card>` → reusable view fragments.
-* **Slots**: `@slot('header')…@endslot` → named content areas inside components.
-* **Layouts**: Wrap views in a layout component, passing attributes + slots.
-* **Caching & Hot‑Reload**: Compiled PHP cached in `var/cache/views`; auto‑recompiles changed templates.
+* **Escaped output**: `{{ $var }}` → safe, HTML‑escaped data
+* **Raw output**: `{!! $html !!}` → unescaped HTML (use responsibly)
+* **Components**: `<x-card title="...">...</x-card>` → reusable view fragments
+* **Slots**: `@slot('header')…@endslot` → named content areas inside components
+* **Layout inheritance**: `@extends('parent')`, `@section('name')…@endsection`, `@yield('name')`
+* **Caching & Hot‑Reload**: compiled PHP cached in `var/cache/views`; auto‑recompiles modified templates
 
 ---
 
@@ -24,7 +24,7 @@ my-app/
 │  ├─ posts/
 │  │  └─ show.ml.php           # Nested view under posts/
 │  └─ components/
-│     ├─ layout.ml.php         # Layout component
+│     ├─ layout.ml.php         # Layout component for <x-layout>
 │     └─ alert.ml.php          # Alert component
 └─ var/
    └─ cache/views/             # Generated PHP cache files
@@ -42,28 +42,35 @@ my-app/
 ### 1. Echoing Data
 
 ```php
-<p>Name: {{ $user->name }}</p>   <!-- escaped -->
-<p>Bio: {!! $user->bio !!}</p>   <!-- raw -->
+<p>Name: {{ \$user->name }}</p>   <!-- escaped -->
+<p>Bio: {!! \$user->bio !!}</p>   <!-- raw -->
 ```
 
-### 2. Components
+### 2. Components & Slots
 
 ```php
-// In a view:
 <x-alert type="error">
-  <p>Error occurred!</p>
+  @slot('header')
+    <strong>Error:</strong>
+  @endslot
+  <p>Something went wrong.</p>
 </x-alert>
+```
 
-// resources/views/components/alert.ml.php
-<div class="alert alert-<?= $type ?>">
-  <?= $slotContent ?>
+`resources/views/components/alert.ml.php`:
+
+```php
+<div class="alert alert-<?= \$type ?>">
+  <?= \$slots['header']() ?>
+  <?= \$slotContent ?>
 </div>
 ```
 
-* **Attributes** (`type="error"`) become PHP variables (`$type`).
-* **Inner HTML** captured as `$slotContent`.
+* **Attributes** (`type="error"`) become PHP variables (`\$type`).
+* **Named slots** captured as closures in `\$slots['name']`.
+* **Default slot** content available as `\$slotContent`.
 
-### 3. Slots
+### 3. Layout Components
 
 ```php
 <x-layout title="Dashboard">
@@ -71,115 +78,81 @@ my-app/
     <h1>Dashboard</h1>
   @endslot
 
-  <p>Main content here…</p>
+  <p>Main content…</p>
 </x-layout>
 ```
 
-* `@slot('header') … @endslot` compiles into a closure stored in `$slots['header']`.
-* Layout calls `<?= $slots['header']() ?>`.
+`resources/views/components/layout.ml.php` might include `<?= \$slots['header']() ?>` and `<?= \$slotContent ?>` zones.
 
----
+### 4. Layout Inheritance
 
-## 📝 Complete Example
+**Parent layout** (`resources/views/layouts/app.ml.php`):
 
-### A) Layout Component: `resources/views/components/layout.ml.php`
-
-```php
+```html
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>{{ $title }}</title>
-  <link rel="stylesheet" href="/css/app.css">
+  <title>@yield('title')</title>
 </head>
 <body>
-  <nav>
-    <a href="/">Home</a> |
-    <a href="/posts">Posts</a>
-  </nav>
-
-  <header>
-    <?= $slots['header']() ?>
-  </header>
-
-  <main>
-    <?= $slotContent ?>
-  </main>
-
-  <footer>&copy; <?= date('Y') ?> MonkeysLegion</footer>
+  <header>@yield('header')</header>
+  <main>@yield('content')</main>
+  <footer>© {{ date('Y') }} MonkeysLegion</footer>
 </body>
 </html>
 ```
 
-### B) Page View: `resources/views/posts/show.ml.php`
+**Child view** (`resources/views/home.ml.php`):
 
-```php
-<x-layout title="{{ $post->title }}">
+```blade
+@extends('layouts.app')
 
-  @slot('header')
-    <h1>{{ $post->title }}</h1>
-    <p><small>By {{ $post->author }}</small></p>
-  @endslot
+@section('title')
+  {{ \$title }}
+@endsection
 
-  <article>
-    {!! $post->body !!}
-  </article>
+@section('header')
+  <h1>Welcome!</h1>
+@endsection
 
-  <x-alert type="info">
-    <p>Published: {{ $post->createdAt->format('Y-m-d') }}</p>
-  </x-alert>
-
-</x-layout>
+@section('content')
+  <p>Home page content…</p>
+@endsection
 ```
 
-### C) Controller Method
-
-```php
-public function show(ServerRequestInterface $req): ResponseInterface
-{
-  $postId = $req->getAttribute('id');
-  $post   = \$this->repo->find(\$postId);
-
-  \$html = \$this->view->render('posts.show', [
-    'post' => \$post,
-  ]);
-
-  return new Response(
-    Stream::createFromString(\$html),
-    200,
-    ['Content-Type' => 'text/html']
-  );
-}
-```
+* `@extends('layouts.app')` indicates the parent template
+* `@section('…')…@endsection` blocks define content
+* `@yield('…')` in the parent is replaced by each section
 
 ---
 
 ## ⚙️ Rendering Pipeline
 
-1. **Loader**: finds raw `.ml.php` + cache path.
-2. **Parser**: rewrites `<x-*>` & `@slot` to PHP snippets.
-3. **Compiler**: processes directives, escapes `{{ }}`, raw `{!! !!}`, prepends PHP header.
-4. **Cache**: saves to `var/cache/views/<name>.php` and `include`s it.
+1. **Loader**: resolves raw `.ml.php` + cache path
+2. **Parser**: transforms `<x-*>`, `@slot`, `@section`, `@yield`, `{{ }}`, `{!! !!}` into an AST
+3. **Compiler**: generates pure PHP code from the AST
+4. **Cache**: writes to `var/cache/views/<name>.php` and `include`s it
 
 ---
 
 ## 🔄 Caching & Hot‑Reload
 
 * **Location**: `var/cache/views`
-* **Auto‑invalidate**: checks the template timestamp on each render.
-* **Manual**: `php vendor/bin/ml cache:clear`
+* **Auto‑invalidate**: template timestamp checked on each render
+* **Manual clear**: `php vendor/bin/ml cache:clear`
 
 ---
 
 ## 🔧 Extensibility
 
-* **Custom directives**: add `preg_replace_callback` in `Compiler` (e.g. `@uppercase()`).
-* **AST enhancement**: extend `Parser` to build an AST for richer syntax.
-* **Custom loaders**: swap `Loader` for DB‑backed or alternative filesystem layouts.
+* **Custom directives**: add regex callbacks in `Compiler`
+* **AST extensions**: enhance `Parser` for new syntax
+* **Alternative loaders**: swap `Loader` for custom sources (DB, remote)
 
 ---
 
 ## Debugging
-* **Debug variable in template**: `@dump($variable)`.
+
+* **Dump data**: `@dump(\$variable)` inside templates to var\_dump
 
 Happy templating with MLView! 🚀
