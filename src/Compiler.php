@@ -9,8 +9,10 @@ namespace MonkeysLegion\Template;
  *
  * Flow:
  *  1. Let Parser rewrite components / slots → plain directive syntax
- *  2. Apply custom directives (e.g. @upper())
+ *  2. Apply custom directives (e.g. @upper(), @lang())
  *  3. Convert {{ }} and {!! !!} echoes
+ *  4. Debugging directives
+ *  5. Prepend header for strict types + comment
  */
 class Compiler
 {
@@ -24,37 +26,48 @@ class Compiler
     public function compile(string $source, string $path): string
     {
         // 1) Run parser (handles <x-*> & @slot)
-        $source = $this->parser->parse($source);
+        $php = $this->parser->parse($source);
 
         // 2) Custom directive: @upper(expr)
-        $source = preg_replace_callback(
+        $php = preg_replace_callback(
             '/@upper\(([^)]+)\)/',
             static fn(array $m) => "<?= htmlspecialchars(strtoupper({$m[1]}), ENT_QUOTES, 'UTF-8') ?>",
-            $source
+            $php
         );
 
-        // 3) Escaped echo  {{ expr }}
-        $source = preg_replace_callback(
+        // 3) Translation directive: @lang('key', ['c'=>1])
+        $php = preg_replace_callback(
+            "/@lang\((?:'|\")(.+?)(?:'|\")(?:\s*,\s*(\[[^\]]*\]))?\)/",
+            function(array $m) {
+                $key     = $m[1];
+                $replace = $m[2] ?? '[]';
+                return "<?= trans('{$key}', {$replace}) ?>";
+            },
+            $php
+        );
+
+        // 4) Escaped echo  {{ expr }}
+        $php = preg_replace_callback(
             '/\{\{\s*(.+?)\s*\}\}/',
             static fn(array $m) => "<?= htmlspecialchars({$m[1]}, ENT_QUOTES, 'UTF-8') ?>",
-            $source
+            $php
         );
 
-        // 4) Raw echo  {!! expr !!}
-        $source = preg_replace_callback(
+        // 5) Raw echo  {!! expr !!}
+        $php = preg_replace_callback(
             '/\{!!\s*(.+?)\s*!!\}/',
             static fn(array $m) => "<?= {$m[1]} ?>",
-            $source
+            $php
         );
 
-        // 5) Debugging: @dump(expr)
-        $source = preg_replace_callback(
+        // 6) Debugging: @dump(expr)
+        $php = preg_replace_callback(
             '/@dump\((.+?)\)/',
-            fn($m) => "<?php echo '<pre>'; var_dump({$m[1]}); echo '</pre>'; ?>",
-            $source
+            fn(array $m) => "<?php echo '<pre>'; var_dump({$m[1]}); echo '</pre>'; ?>",
+            $php
         );
 
-        // 5) Prepend header for strict types + comment
-        return "<?php\ndeclare(strict_types=1);\n/* Compiled from: {$path} */\n?>\n" . $source;
+        // 7) Prepend header for strict types + comment
+        return "<?php\ndeclare(strict_types=1);\n/* Compiled from: {$path} */\n?>\n" . $php;
     }
 }
