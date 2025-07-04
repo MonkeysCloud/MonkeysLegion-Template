@@ -43,45 +43,22 @@ class MLView
      */
     public function render(string $name, array $data = []): string
     {
-        // 1) Locate the raw template file
-        $templatePath = $this->loader->getPath($name);
-        if (!is_file($templatePath)) {
-            throw new RuntimeException("Template not found: {$name}");
+        // 1) Resolve canonical paths through the Loader API
+        $source   = $this->loader->getSourcePath($name);
+        $compiled = $this->loader->getCompiledPath($name);
+
+        // 2) (Re)compile when the source is newer than its cache
+        if (! is_file($compiled) || filemtime($source) > filemtime($compiled)) {
+            $this->loader->ensureCompiledDir($compiled);
+            $compiledCode = $this->compiler->compile(
+                file_get_contents($source),
+                $source
+            );
+            file_put_contents($compiled, $compiledCode);
         }
 
-        // 2) Compile if out-of-date
-        $cached = $this->compileIfNeeded($templatePath);
-
-        // 3) Execute and return output
-        return $this->renderer->render($cached, $data);
-    }
-
-    /**
-     * Compile the template source if its cached version is missing or stale.
-     */
-    private function compileIfNeeded(string $templatePath): string
-    {
-        $cacheFile = $this->getCacheFile($templatePath);
-
-        // Compile when cache missing or source changed
-        if (!is_file($cacheFile) || filemtime($templatePath) > filemtime($cacheFile)) {
-            $source = file_get_contents($templatePath);
-            $compiled = $this->compiler->compile($source, $templatePath);
-            file_put_contents($cacheFile, $compiled);
-        }
-
-        return $cacheFile;
-    }
-
-    /**
-     * Generate a unique cache filename for a given template path.
-     */
-    private function getCacheFile(string $templatePath): string
-    {
-        $baseDir = $this->loader->getBasePath();
-        $relative = ltrim(str_replace($baseDir, '', $templatePath), '/\\');
-        $filename = preg_replace('/[^a-zA-Z0-9_]/', '_', $relative) . '.php';
-        return rtrim($this->cacheDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        // 3) Execute and return HTML
+        return $this->renderer->render($compiled, $data);
     }
 
     /**
