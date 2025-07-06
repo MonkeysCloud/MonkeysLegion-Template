@@ -12,6 +12,7 @@ use RuntimeException;
  * Supported in this minimal pass:
  *  - Component tags  : <x-alert title="Hi">…</x-alert>
  *  - Slot directives : @slot('name') … @endslot
+ *  - Slot tags       : <x-slot:name>…</x-slot:name>
  *
  * The parser transforms them into plain PHP snippets. They will then be
  * processed by Compiler (which handles {{ }} / {!! !!} interpolation).
@@ -23,10 +24,12 @@ class Parser
      */
     public function parse(string $source): string
     {
-        // 1) Components first so nested slots stay intact
-        $source = $this->parseComponents($source);
-        // 2) Then slot directives
+        // 1) Handle slot tags first (x-slot:name)
+        $source = $this->parseSlotTags($source);
+        // 2) Then slot directives (@slot)
         $source = $this->parseSlots($source);
+        // 3) Components last so slots are already processed
+        $source = $this->parseComponents($source);
         return $source;
     }
 
@@ -80,18 +83,16 @@ class Parser
                 $innerParsed = $this->parse($inner);
 
                 // Generate PHP snippet with dynamic directory lookup
-                return implode("\n", [
-                    "<?php /* component: {$name} */ ?>",
-                    "<?php \$slots = \$slots ?? []; ?>",
-                    "<?php \$__ml_attrs = {$attrsCode}; extract(\$__ml_attrs, EXTR_SKIP); ?>",
-                    "<?php ob_start(); ?>{$innerParsed}<?php \$slotContent = ob_get_clean(); ?>",
-                    "<?php",
-                    "foreach(['components','layouts','partials'] as \$__ml_dir) {",
-                    "    \$__ml_path = base_path('resources/views/'.\$__ml_dir.'/{$name}.ml.php');",
-                    "    if (is_file(\$__ml_path)) { include \$__ml_path; break; }",
-                    "}",
-                    "?>"
-                ]);
+                return "\n<?php /* component: {$name} */ ?>\n" .
+                    "<?php \$slots = \$slots ?? []; ?>\n" .
+                    "<?php \$__ml_attrs = {$attrsCode}; extract(\$__ml_attrs, EXTR_SKIP); ?>\n" .
+                    "<?php ob_start(); ?>\n{$innerParsed}\n<?php \$slotContent = ob_get_clean(); ?>\n" .
+                    "<?php\n" .
+                    "foreach(['components','layouts','partials'] as \$__ml_dir) {\n" .
+                    "    \$__ml_path = base_path('resources/views/'.\$__ml_dir.'/{$name}.ml.php');\n" .
+                    "    if (is_file(\$__ml_path)) { include \$__ml_path; break; }\n" .
+                    "}\n" .
+                    "?>\n";
             },
             $source
         );
@@ -107,7 +108,23 @@ class Parser
             function (array $m) {
                 $slot = $m[1];
                 $body = $this->parse($m[2]);
-                return "<?php \$slots = \$slots ?? []; \$slots['{$slot}'] = function() { ?>{$body}<?php }; ?>";
+                return "\n<?php \$slots = \$slots ?? []; \$slots['{$slot}'] = function() { ?>\n{$body}\n<?php }; ?>\n";
+            },
+            $source
+        );
+    }
+
+    /**
+     * Convert <x-slot:name>…</x-slot:name> into PHP closures in \$slots.
+     */
+    private function parseSlotTags(string $source): string
+    {
+        return preg_replace_callback(
+            '/<x-slot:([a-zA-Z0-9_-]+)([^>]*)>(.*?)<\/x-slot:\\1>/s',
+            function (array $m) {
+                $slot = $m[1];
+                $body = $this->parse($m[3]);
+                return "\n<?php \$slots = \$slots ?? []; \$slots['{$slot}'] = function() { ?>\n{$body}\n<?php }; ?>\n";
             },
             $source
         );
