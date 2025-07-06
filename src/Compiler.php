@@ -31,43 +31,57 @@ class Compiler
         // 2) Custom directive: @upper(expr)
         $php = preg_replace_callback(
             '/@upper\(([^)]+)\)/',
-            static fn(array $m) => "<?= htmlspecialchars(strtoupper({$m[1]}), ENT_QUOTES, 'UTF-8') ?>",
+            static fn(array $m) => "\n<?= htmlspecialchars(strtoupper((string)({$m[1]} ?? '')), ENT_QUOTES, 'UTF-8') ?>\n",
             $php
         );
 
         // 3) Translation directive: @lang('key', ['c'=>1])
         $php = preg_replace_callback(
             "/@lang\((?:'|\")(.+?)(?:'|\")(?:\s*,\s*(\[[^\]]*\]))?\)/",
-            function(array $m) {
+            function (array $m) {
                 $key     = $m[1];
                 $replace = $m[2] ?? '[]';
-                return "<?= trans('{$key}', {$replace}) ?>";
+                return "\n<?= trans('{$key}', {$replace}) ?>\n";
             },
             $php
         );
 
-        // 4) Escaped echo  {{ expr }}
+        // 4) Escaped echo  {{ expr }} - Handle null values safely
         $php = preg_replace_callback(
             '/\{\{\s*(.+?)\s*\}\}/',
-            static fn(array $m) => "<?= htmlspecialchars({$m[1]}, ENT_QUOTES, 'UTF-8') ?>",
+            static fn(array $m) => "\n<?= htmlspecialchars((string)({$m[1]} ?? ''), ENT_QUOTES, 'UTF-8') ?>\n",
             $php
         );
 
-        // 5) Raw echo  {!! expr !!}
+        // 5) Raw echo  {!! expr !!} - Handle null values safely
         $php = preg_replace_callback(
             '/\{!!\s*(.+?)\s*!!\}/',
-            static fn(array $m) => "<?= {$m[1]} ?>",
+            static fn(array $m) => "\n<?= {$m[1]} ?? '' ?>\n",
             $php
         );
 
         // 6) Debugging: @dump(expr)
         $php = preg_replace_callback(
             '/@dump\((.+?)\)/',
-            fn(array $m) => "<?php echo '<pre>'; var_dump({$m[1]}); echo '</pre>'; ?>",
+            fn(array $m) => "\n<?php echo '<pre>'; var_dump({$m[1]}); echo '</pre>'; ?>\n",
             $php
         );
 
-        // 7) Prepend header for strict types + comment
+        // 7) Control structures: @if, @elseif, @else, @endif
+        $php = preg_replace('/@if\s*\((.+?)\)/', "\n<?php if ($1): ?>\n", $php);
+        $php = preg_replace('/@elseif\s*\((.+?)\)/', "\n<?php elseif ($1): ?>\n", $php);
+        $php = preg_replace('/@else\b/', "\n<?php else: ?>\n", $php);
+        $php = preg_replace('/@endif\b/', "\n<?php endif; ?>\n", $php);
+
+        // 8) Loops: @foreach, @endforeach
+        $php = preg_replace('/@foreach\s*\((.+?)\)/', "\n<?php foreach ($1): ?>\n", $php);
+        $php = preg_replace('/@endforeach\b/', "\n<?php endforeach; ?>\n", $php);
+
+        // 9) Clean up excessive newlines and format properly
+        $php = preg_replace('/\n{3,}/', "\n\n", $php);
+        $php = trim($php);
+
+        // 10) Prepend header for strict types + comment
         return "<?php\ndeclare(strict_types=1);\n/* Compiled from: {$path} */\n?>\n" . $php;
     }
 }
