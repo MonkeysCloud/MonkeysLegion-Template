@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MonkeysLegion\Template;
 
 use RuntimeException;
+use Throwable;
 
 /**
  * Renders MLView templates (parses, compiles, caches, and executes)
@@ -73,7 +74,8 @@ final class Renderer
                 mkdir($this->cacheDir, 0755, true);
             }
 
-            if (!is_file($compiledPath)
+            if (
+                !is_file($compiledPath)
                 || filemtime($sourcePath) > filemtime($compiledPath)
             ) {
                 $ast = $this->parser->parse($raw);
@@ -83,8 +85,24 @@ final class Renderer
 
             extract($data, EXTR_SKIP);
             ob_start();
-            include $compiledPath;
-            return ob_get_clean();
+            try {
+                include $compiledPath;
+
+                return ob_get_clean();
+            } catch (Throwable $e) {
+                ob_end_clean();
+
+                // Enhanced error message with variable context
+                $errorMsg = "Error including compiled template: " . $e->getMessage();
+                if (str_contains($e->getMessage(), 'htmlspecialchars')) {
+                    $nullVars = array_keys(array_filter($data, fn($v) => $v === null));
+                    if (!empty($nullVars)) {
+                        $errorMsg .= " (Null variables found: " . implode(', ', $nullVars) . ")";
+                    }
+                }
+
+                throw new RuntimeException($errorMsg, 0, $e);
+            }
         }
 
         // No cache: compile and eval on the fly

@@ -26,12 +26,7 @@ class MLView
         private Compiler $compiler,
         private Renderer $renderer,
         private string   $cacheDir
-    ) {
-        // Ensure the cache directory exists
-        if (!is_dir($this->cacheDir)) {
-            mkdir($this->cacheDir, 0755, true);
-        }
-    }
+    ) {}
 
     /**
      * Render a template by name with the provided data.
@@ -43,22 +38,8 @@ class MLView
      */
     public function render(string $name, array $data = []): string
     {
-        // 1) Resolve canonical paths through the Loader API
-        $source   = $this->loader->getSourcePath($name);
-        $compiled = $this->loader->getCompiledPath($name);
-
-        // 2) (Re)compile when the source is newer than its cache
-        if (! is_file($compiled) || filemtime($source) > filemtime($compiled)) {
-            $this->loader->ensureCompiledDir($compiled);
-            $compiledCode = $this->compiler->compile(
-                file_get_contents($source),
-                $source
-            );
-            file_put_contents($compiled, $compiledCode);
-        }
-
-        // 3) Execute and return HTML
-        return $this->renderer->render($compiled, $data);
+        // Execute and return HTML
+        return $this->renderer->render($name, $data);
     }
 
     /**
