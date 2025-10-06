@@ -60,13 +60,10 @@ final class Renderer
                 throw new RuntimeException("Template source not found: {$sourcePath}");
             }
 
-            // Log step 1: Loading raw source
             $raw = file_get_contents($sourcePath);
 
-            // Log step 2: Extracting sections
             [$raw, $sections] = $this->extractSections($raw);
 
-            // Log inheritance information
             if (isset($sections['__extends'])) {
                 $parentName = $sections['__extends'];
 
@@ -78,7 +75,6 @@ final class Renderer
                 $parentRaw = file_get_contents($parentPath);
 
                 $raw = $this->replaceYields($parentRaw, $sections);
-            } else {
             }
 
             // Compile and render, using cache if enabled

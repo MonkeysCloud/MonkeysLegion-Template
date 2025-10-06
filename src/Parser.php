@@ -40,15 +40,6 @@ class Parser
             $source = $this->parseIncludes($source);
             // 5) Components last so slots are already processed
             $source = $this->parseComponents($source);
-
-            // If we've done more than one iteration and things are stable, log it
-            if ($iterationCount > 1 && $source === $previousSource) {
-                error_log("Parser stabilized after {$iterationCount} iterations");
-            }
-        }
-
-        if ($iterationCount >= $maxIterations) {
-            error_log("WARNING: Parser reached maximum iterations ({$maxIterations}), possible infinite loop");
         }
 
         return $source;

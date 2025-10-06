@@ -70,12 +70,6 @@ class VariableScope
         // This ensures that any explicitly passed value (even null or empty string) overrides the default
         $newScope = array_merge($declaredParams, $passedVars);
 
-        // Log the final scope for debugging
-        $paramsJson = json_encode($declaredParams);
-        $varsJson = json_encode($passedVars);
-        $scopeJson = json_encode($newScope);
-        error_log("Creating isolated scope - Params: {$paramsJson}, Vars: {$varsJson}, Final: {$scopeJson}");
-
         // No variables are automatically inherited from parent scope
         $this->scopeStack[] = $newScope;
     }
