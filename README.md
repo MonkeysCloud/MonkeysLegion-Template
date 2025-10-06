@@ -37,73 +37,81 @@ my-app/
 
 ---
 
-## ✏️ Basic Syntax
+## 2 · Hello, World
 
-### 1. Echoing Data
+<!-- resources/views/hello.ml.php -->
+<h1>Hello, {{ $name }}!</h1>
+
+use MonkeysLegion\Template\MLView;
+
+$view = new MLView(base_path('resources/views'));
+
+echo $view->render('hello', ['name' => 'Alice']);
+
+The first call parses → compiles → caches the template; subsequent renders are just an include.
+
+---
+
+## 3 · Component Syntax
+
+<x-card>
+  <x-slot:title>
+    Welcome, {{ $user->name }}
+  </x-slot:title>
+
+  <p>Your last login was {{ $user->lastLogin->diffForHumans() }}.</p>
+</x-card>
+
+<x-component> ↔ PHP class App\View\Components\Component.
+
+<x-slot:name> fills the component's $this->slot('name').
+
+{{ … }} escapes htmlspecialchars(); {!! … !!} prints raw.
+
+---
+
+## 6 · Blade-style Helpers
+
+| Helper | Description |
+|--------|-------------|
+| @if / @elseif / @endif | Control blocks |
+| @foreach / @endforeach | Loops (auto-escapes inside {{ }}) |
+| @include('partial') | Inlines another template |
+| @csrf | Outputs <input type="hidden" …> token (when the CSRF package is installed) |
+
+(All helpers compile down to raw PHP inside the cached file—no runtime cost.)
+
+---
+
+## 🛠️ Component Best Practices
+
+### Simple Component Creation
+
+Components should be straightforward with minimal PHP boilerplate:
 
 ```php
-<p>Name: {{ \$user->name }}</p>   <!-- escaped -->
-<p>Bio: {!! \$user->bio !!}</p>   <!-- raw -->
-```
-
-### 2. Components & Slots
-
-```php
-<x-alert type="error">
-  @slot('header')
-    <strong>Error:</strong>
-  @endslot
-  <p>Something went wrong.</p>
-</x-alert>
-```
-
-`resources/views/components/alert.ml.php`:
-
-```php
-<div class="alert alert-<?= \$type ?>">
-  <?= \$slots['header']() ?>
-  <?= \$slotContent ?>
+<div class="alert alert-<?= $type ?>">
+  <?php if (isset($slots['header'])): ?>
+    <div class="alert-header"><?= $slots['header']() ?></div>
+  <?php endif; ?>
+  <div class="alert-body"><?= $slotContent ?></div>
 </div>
 ```
 
-* **Attributes** (`type="error"`) become PHP variables (`\$type`).
-* **Named slots** captured as closures in `\$slots['name']`.
-* **Default slot** content available as `\$slotContent`.
+* **Check slots**: Always use `isset($slots['name'])` before accessing slots
+* **Access slot content**: Use `$slots['header']()` for named slots or `$slotContent` for default content
+* **Component attributes**: All attributes passed to your component are available as PHP variables
 
-### 3. Layout Components
+### Advanced Component Rendering
 
-```php
-<x-layout title="Dashboard">
-  @slot('header')
-    <h1>Dashboard</h1>
-  @endslot
+Behind the scenes, MLView uses a component rendering pipeline:
 
-  <p>Main content…</p>
-</x-layout>
-```
+1. Slots are processed recursively to handle nested components
+2. Component attributes are extracted into the local scope 
+3. The main content is captured in `$slotContent`
+4. Component output is inserted into the parent template
 
-`resources/views/components/layout.ml.php` might include `<?= \$slots['header']() ?>` and `<?= \$slotContent ?>` zones.
-
-### 4. Layout Inheritance
-
-**Parent layout** (`resources/views/layouts/app.ml.php`):
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>@yield('title')</title>
-</head>
-<body>
-  <header>@yield('header')</header>
-  <main>@yield('content')</main>
-  <footer>© {{ date('Y') }} MonkeysLegion</footer>
-</body>
-</html>
-```
-
-**Child view** (`resources/views/home.ml.php`):
-
+This approach allows for reusable components that maintain proper scoping while keeping them simple.
 ```blade
 @extends('layouts.app')
 
@@ -124,7 +132,6 @@ my-app/
 * `@section('…')…@endsection` blocks define content
 * `@yield('…')` in the parent is replaced by each section
 
----
 
 ## ⚙️ Rendering Pipeline
 
@@ -156,3 +163,128 @@ my-app/
 * **Dump data**: `@dump(\$variable)` inside templates to var\_dump
 
 Happy templating with MLView! 🚀
+
+# MLView Component System
+
+The MLView template engine supports a component system to build reusable UI elements.
+
+## Component Usage
+
+Use components in your templates with `<x-name>` tags:
+
+```php
+<!-- Using a component with a default slot -->
+<x-alert type="warning">
+    This is a warning message!
+</x-alert>
+
+<!-- Using a component with named slots -->
+<x-card>
+    @slot('header')
+        Card Title
+    @endslot
+    
+    This is the main content (default slot)
+    
+    @slot('footer')
+        <button>Action</button>
+    @endslot
+</x-card>
+```
+
+## Creating Components
+
+Components should use PHP syntax for optimal compatibility:
+
+```php
+<!-- resources/views/components/alert.ml.php -->
+@param(['type' => 'info', 'dismissible' => false])
+
+<div class="alert alert-<?= $type ?> <?= $dismissible ? 'alert-dismissible' : '' ?>">
+    <?php if (isset($slots['header'])): ?>
+        <div class="alert-header"><?= $slots['header']() ?></div>
+    <?php endif; ?>
+    
+    <div class="alert-body"><?= $slotContent ?></div>
+    
+    <?php if ($dismissible): ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <?php endif; ?>
+</div>
+```
+
+### Component Parameters
+
+Components can define default parameters using the `@param` directive:
+
+```php
+@param(['name' => 'default value', 'another' => true, 'count' => 5])
+```
+
+These parameters:
+- Must be defined at the top of the component file
+- Will be available as PHP variables inside the component
+- Can be overridden by passing attributes to the component
+
+When using the component:
+
+```php
+<!-- Uses default 'info' type -->
+<x-alert>This is an info message</x-alert>
+
+<!-- Overrides the default type with 'danger' -->
+<x-alert type="danger">This is a danger alert!</x-alert>
+
+<!-- Sets dismissible to true -->
+<x-alert type="warning" dismissible="true">This is dismissible</x-alert>
+```
+
+The parameters system allows component authors to define sensible defaults while giving component users the flexibility to customize as needed.
+
+## Slot Handling
+
+Define slots using Blade-style `@slot` directives:
+
+```php
+<x-card>
+    @slot('header')
+        Card Title
+    @endslot
+    
+    Default content
+</x-card>
+```
+
+## Component Data
+
+Inside a component:
+
+- `$slotContent` contains the default (unnamed) slot content
+- `$slots['name']()` calls and renders named slots
+- All attributes from the component tag are available as variables
+
+## Template Inclusion
+
+### @include directive
+
+The `@include` directive lets you include one template from another:
+
+```php
+<!-- Include a partial template -->
+@include('partials.header')
+
+<!-- Include with variables -->
+@include('partials.alert', ['type' => 'warning', 'message' => 'Danger ahead!'])
+```
+
+Templates included with `@include` should be placed in the standard views directory structure and are referenced using dot notation:
+
+- `@include('header')` → `resources/views/header.ml.php`
+- `@include('partials.header')` → `resources/views/partials/header.ml.php`
+
+### Component vs @include
+
+- **Components** (`<x-name>`) are placed in `resources/views/components/name.ml.php` 
+- **Included templates** (`@include`) can be placed anywhere in the views directory
+- Components support slots and have a dedicated lifecycle
+- Included templates are simply merged into the parent template
