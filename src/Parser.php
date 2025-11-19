@@ -313,7 +313,7 @@ class Parser
             "    if (is_file(\$__ml_path)) {\n" .
             "        \$__component_found = true;\n" .
             "        try {\n" .
-            "            // Load and parse component\n" .
+            "            // Load component source\n" .
             "            \$__component_source = file_get_contents(\$__ml_path);\n" .
             "            \$__parser = new \\MonkeysLegion\\Template\\Parser();\n" .
             "            \$__component_params = \$__parser->extractComponentParams(\$__component_source);\n" .
@@ -331,12 +331,12 @@ class Parser
             "            );\n" .
             "            \$slot = \$slots->getDefault();\n" .
             "            \n" .
-            "            // Compile and execute\n" .
+            "            // OPTIONAL: strip @props/@param from component source\n" .
             "            \$__component_source = \$__parser->removePropsDirectives(\$__component_source);\n" .
-            "            \$__parsed = \$__parser->parse(\$__component_source);\n" .
+            "            \n" .
+            "            // IMPORTANT: pass RAW source to Compiler; it will call Parser internally\n" .
             "            \$__compiler = new \\MonkeysLegion\\Template\\Compiler(\$__parser);\n" .
-            "            \$__compiled = \$__compiler->compile(\$__parsed, \$__ml_path);\n" .
-            "            \$__compiled = substr(\$__compiled, strpos(\$__compiled, '?>') + 2);\n" .
+            "            \$__compiled = \$__compiler->compile(\$__component_source, \$__ml_path);\n" .
             "            \n" .
             "            // Extract variables\n" .
             "            \$__isolated_data = \$__ml_scope->getCurrentScope();\n" .

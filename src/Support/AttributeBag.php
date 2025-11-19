@@ -64,7 +64,8 @@ class AttributeBag
 
         foreach ($this->attributes as $key => $value) {
             if ($key === 'class' && isset($defaults['class'])) {
-                // Merge classes instead of replacing
+                // Merge classes instead of replacing.
+                // Support string or array values for both sides.
                 $merged['class'] = $this->mergeClasses($defaults['class'], $value);
             } else {
                 // Override other attributes
@@ -141,16 +142,33 @@ class AttributeBag
         }
 
         $parts = [];
+
         foreach ($this->attributes as $key => $value) {
+            // Special handling for class, support string or array formats.
+            if ($key === 'class') {
+                $classString = $this->normalizeClassValue($value);
+                if ($classString !== '') {
+                    $escaped = htmlspecialchars($classString, ENT_QUOTES, 'UTF-8');
+                    $parts[] = "class=\"{$escaped}\"";
+                }
+                continue;
+            }
+
             if (is_bool($value)) {
                 // Boolean attributes (disabled, readonly, etc.)
                 if ($value) {
                     $parts[] = $key;
                 }
-            } elseif ($value !== null && $value !== '') {
-                // Regular attributes
-                $escaped = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
-                $parts[] = "{$key}=\"{$escaped}\"";
+            } elseif (is_scalar($value)) {
+                // Regular scalar attributes
+                if ($value !== null && $value !== '') {
+                    $escaped = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                    $parts[] = "{$key}=\"{$escaped}\"";
+                }
+            } else {
+                // Skip arrays/objects for non-class attributes (e.g. :tags="[...]")
+                // These are props for components, not HTML attributes.
+                continue;
             }
         }
 
@@ -166,12 +184,56 @@ class AttributeBag
     }
 
     /**
-     * Merge CSS classes intelligently
+     * Normalize any value that should represent CSS classes into a string.
+     *
+     * Supports:
+     * - 'btn primary'
+     * - ['btn', 'text-sm']
+     * - ['btn' => true, 'hidden' => false]
      */
-    private function mergeClasses(string $default, string $override): string
+    private function normalizeClassValue(string|array|null $value): string
     {
-        $defaultClasses = array_filter(explode(' ', $default));
-        $overrideClasses = array_filter(explode(' ', $override));
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_string($value)) {
+            return trim($value);
+        }
+
+        // Array format: ['base', 'active' => $isActive]
+        $result = [];
+
+        foreach ($value as $key => $val) {
+            if (is_int($key)) {
+                // Simple class name
+                if ($val) {
+                    $result[] = (string)$val;
+                }
+            } else {
+                // Conditional class: ['active' => $isActive]
+                if ($val) {
+                    $result[] = $key;
+                }
+            }
+        }
+
+        return implode(' ', array_filter($result));
+    }
+
+    /**
+     * Merge CSS classes intelligently
+     *
+     * @param string|array $default
+     * @param string|array $override
+     */
+    private function mergeClasses(string|array $default, string|array $override): string
+    {
+        $defaultString  = $this->normalizeClassValue($default);
+        $overrideString = $this->normalizeClassValue($override);
+
+        $defaultClasses  = array_filter(explode(' ', $defaultString));
+        $overrideClasses = array_filter(explode(' ', $overrideString));
 
         // Merge and deduplicate
         $merged = array_unique(array_merge($defaultClasses, $overrideClasses));

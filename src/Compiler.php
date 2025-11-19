@@ -53,6 +53,7 @@ class Compiler
         //    This prevents {{-- ... --}} from being treated as an echo
         //    and generating invalid PHP like "-- Meta Tags --".
         $php = $this->compileComments($php);
+        $php = $this->compilePhpBlocks($php);
 
         // 3) New directives - JSON and JavaScript helpers
         $php = $this->compileJson($php);
@@ -86,33 +87,44 @@ class Compiler
         $php = $this->compileUpper($php);
         $php = $this->compileLang($php);
 
-        // 10) CRITICAL: Process attribute bags in HTML tags FIRST
-        //     This must run before compileEscapedEchoes to prevent escaping of `>`
-        $php = $this->compileAttributeBagEchosInTags($php);
-
-        // 11) Process expressions in HTML attributes
+        // 10) Process expressions in HTML attributes
         $php = $this->compileAttributeExpressions($php);
 
-        // 12) Regular escaped and raw echoes
+        // 11) Regular escaped and raw echoes
         $php = $this->compileEscapedEchoes($php);
         $php = $this->compileRawEchoes($php);
 
-        // 13) Debugging directives
+        // 12) Debugging directives
         $php = $this->compileDump($php);
         $php = $this->compileDd($php);
 
-        // 14) Control structures
+        // 13) Control structures
         $php = $this->compileConditionals($php);
         $php = $this->compileLoops($php);
 
-        // 15) Clean up excessive newlines
+        // 14) Clean up excessive newlines
         $php = preg_replace('/\n{3,}/', "\n\n", $php);
         $php = trim($php);
 
-        // 16) Post-process to restore protected code examples
+        // 15) Post-process to restore protected code examples
         $php = $this->postProcessCodeExamples($php);
 
-        // Wrap with PHP tags
+        $useHeader = "use MonkeysLegion\\Template\\Support\\AttributeBag;\n";
+
+        // If the compiled output starts with a PHP open tag,
+        // insert the `use` statement right after it.
+        if (str_starts_with($php, '<?php')) {
+            $php = preg_replace(
+                '/^<\?php(\s*)/i',
+                "<?php$1{$useHeader}",
+                $php,
+                1
+            );
+        } else {
+            // Otherwise, prepend a PHP block with the use statement
+            $php = "<?php\n{$useHeader}?>\n" . $php;
+        }
+
         return $php;
     }
 
@@ -456,44 +468,6 @@ class Compiler
     }
 
     /**
-     * Handle Blade-style attribute bags INSIDE opening tags:
-     *
-     *   <nav {{ $attrs->merge(['class' => 'navbar']) }}>
-     *
-     * If we let this hit the generic {{ }} compiler, it becomes a standalone
-     * echo between "<nav" and ">" and leaks as:
-     *
-     *   class="navbar navbar-sticky"
-     *   >
-     *
-     * Here we transform the {{ ... }} segment INSIDE the tag into
-     * a proper PHP inline echo, keeping the tag and closing ">" intact.
-     */
-    private function compileAttributeBagEchosInTags(string $php): string
-    {
-        return preg_replace_callback(
-        // Match: "<tag {{ $attrs }}" and optionally capture what comes after including >
-            '/<([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^>]*?)?)\s+\{\{\s*([^}]+?)\s*\}\}(\s*[^<]*?>)/s',
-            static function (array $m): string {
-                $tagName = $m[1];          // e.g. "nav"
-                $beforeAttrs = $m[2];      // e.g. " class='foo'" or empty
-                $expr = trim($m[3]);       // e.g. "$attrs->merge(['class' => 'navbar'])"
-                $after = $m[4];            // e.g. ">" or " class='bar'>"
-
-                // Only touch attribute bags, NOT arbitrary {{ ... }} inside tags
-                if (!preg_match('/^\$(attrs|attributes)\b/', $expr)) {
-                    return $m[0]; // leave unchanged
-                }
-
-                // Turn the attribute bag echo into inline PHP (raw output, no escaping)
-                // and preserve everything that came after
-                return '<' . $tagName . $beforeAttrs . " <?= (string)({$expr} ?? '') ?>" . $after;
-            },
-            $php
-        );
-    }
-
-    /**
      * Compile raw echoes {!! !!}
      */
     private function compileRawEchoes(string $php): string
@@ -627,6 +601,28 @@ class Compiler
     private function compileComments(string $php): string
     {
         return preg_replace('/\{\{--.*?--\}\}/s', '', $php);
+    }
+
+    /**
+     * Compile @php ... @endphp blocks and inline @php(...)
+     *
+     * Example:
+     *   @php
+     *       $x = 1;
+     *       dump($x);
+     *   @endphp
+     *
+     *   @php($foo = 'bar')
+     */
+    private function compilePhpBlocks(string $php): string
+    {
+        // Replace @php with opening PHP tag
+        $php = preg_replace('/^[ \t]*@php\s*$/m', '<?php', $php);
+
+        // Replace @endphp with closing PHP tag
+        $php = preg_replace('/^[ \t]*@endphp\s*$/m', '?>', $php);
+
+        return $php;
     }
 
     /**

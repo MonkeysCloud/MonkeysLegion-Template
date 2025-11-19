@@ -46,9 +46,6 @@ final class Renderer
      */
     public function render(string $name, array $data = []): string
     {
-        // Start output buffering immediately to prevent any headers already sent errors
-        ob_start();
-
         try {
             // Initialize the variable scope system with global data
             $scope = new VariableScope($data);
@@ -56,7 +53,6 @@ final class Renderer
 
             $sourcePath = $this->loader->getSourcePath($name);
             if (!is_file($sourcePath)) {
-                ob_end_clean(); // Clean the buffer before throwing
                 throw new RuntimeException("Template source not found: {$sourcePath}");
             }
 
@@ -96,6 +92,10 @@ final class Renderer
                     file_put_contents($compiledPath, $php);
                 }
 
+                // ==== Buffered include with level tracking (cache enabled) ====
+                $level = ob_get_level();
+                ob_start();
+
                 try {
                     // Make data available globally for slots
                     $GLOBALS['__data']     = $scope->getCurrentScope();
@@ -115,14 +115,20 @@ final class Renderer
                     // Get the buffered output from the included template
                     $templateOutput = ob_get_clean();
 
-                    // Clean up globals
-                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+                    if ($templateOutput === false) {
+                        throw new RuntimeException(sprintf(
+                            'Renderer buffer was closed while rendering view [%s]. ' .
+                            'Check for ob_end_clean()/ob_clean() in your views or components.',
+                            $name
+                        ));
+                    }
 
                     return $templateOutput;
                 } catch (Throwable $e) {
-                    // Clean up buffer and globals on error
-                    ob_end_clean();
-                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+                    // Clean only buffers we started
+                    while (ob_get_level() > $level) {
+                        ob_end_clean();
+                    }
 
                     // Enhanced error message with variable context
                     $errorMsg = "Error rendering template: " . $e->getMessage();
@@ -131,6 +137,8 @@ final class Renderer
                     }
 
                     throw new RuntimeException($errorMsg, 0, $e);
+                } finally {
+                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
                 }
             }
 
@@ -149,6 +157,10 @@ final class Renderer
             // Reuse the same compiled path even when cache is disabled
             $tmpCompiledPath = $compiledPath;
             file_put_contents($tmpCompiledPath, $php);
+
+            // ==== Buffered include with level tracking (no cache) ====
+            $level = ob_get_level();
+            ob_start();
 
             try {
                 // Make data available globally for slots
@@ -169,17 +181,20 @@ final class Renderer
                 // Get the buffered output
                 $templateOutput = ob_get_clean();
 
-                // Clean up globals
-                unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-
-                // Since caching is disabled, we can optionally remove the temp compiled file
-                @unlink($tmpCompiledPath);
+                if ($templateOutput === false) {
+                    throw new RuntimeException(sprintf(
+                        'Renderer buffer was closed while rendering view [%s] (no-cache). ' .
+                        'Check for ob_end_clean()/ob_clean() in your views or components.',
+                        $name
+                    ));
+                }
 
                 return $templateOutput;
             } catch (Throwable $e) {
-                // Clean buffers and globals on error
-                ob_end_clean();
-                unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+                // Clean only buffers we started
+                while (ob_get_level() > $level) {
+                    ob_end_clean();
+                }
 
                 throw new RuntimeException(
                     "Error rendering template (no-cache): "
@@ -189,20 +204,21 @@ final class Renderer
                     0,
                     $e
                 );
+            } finally {
+                unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+                // Since caching is disabled, we can optionally remove the temp compiled file
+                @unlink($tmpCompiledPath);
             }
         } catch (Throwable $e) {
-            // Make sure to clean all buffers
-            while (ob_get_level() > 0) {
-                ob_end_clean();
-            }
+            // Do NOT nuke all buffers globally; just make sure we don't leak ours.
+            // (If you really want to, you can restore to a known level here,
+            //  but at this point we've already cleaned in the inner blocks.)
 
-            // Clean up globals if exception occurs
             unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
 
             throw $e;
         }
     }
-
     /**
      * Render a component file directly.
      * This is called when a component is included during rendering.
@@ -213,11 +229,12 @@ final class Renderer
      */
     public function renderComponent(string $path, array $data = []): string
     {
-        // Start output buffering
+        // Track current buffer level so we only clean what we started
+        $level = ob_get_level();
         ob_start();
 
         try {
-            $source   = file_get_contents($path);
+            $source = file_get_contents($path);
             // PASS RAW SOURCE to Compiler; it will call Parser internally
             $compiled = $this->compiler->compile($source, $path);
 
@@ -235,17 +252,32 @@ final class Renderer
             // Execute compiled component template
             include $tmpPath;
 
-            // Clean temp file
-            @unlink($tmpPath);
+            // Capture output
+            $output = ob_get_clean();
 
-            return ob_get_clean();
+            if ($output === false) {
+                throw new RuntimeException(
+                    "Component buffer was closed while rendering {$path}. " .
+                    "Check for ob_end_clean()/ob_clean() calls inside the component."
+                );
+            }
+
+            return $output;
         } catch (\Throwable $e) {
-            ob_end_clean();
+            // Restore buffers only down to the level we started
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+
             throw new RuntimeException(
                 "Error rendering component {$path}: " . $e->getMessage(),
                 0,
                 $e
             );
+        } finally {
+            if (isset($tmpPath) && is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
         }
     }
 
