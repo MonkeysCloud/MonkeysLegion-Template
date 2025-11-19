@@ -261,9 +261,28 @@ class Parser
         // Parse attributes into associative array
         $attrs = $this->parseAttributes($attrStr);
 
+        // Normalize colon-prefixed keys again just in case
+        $normalized = [];
+        foreach ($attrs as $k => $v) {
+            if (is_string($k) && $k !== '' && $k[0] === ':') {
+                $name = substr($k, 1);
+
+                // If the value is a quoted string (from var_export), strip quotes
+                if (is_string($v) && preg_match("/^'(.*)'$/s", $v, $m)) {
+                    $expr = $m[1];
+                } else {
+                    $expr = $v;
+                }
+
+                $normalized[$name] = $expr;
+            } else {
+                $normalized[$k] = $v;
+            }
+        }
+
         // Build attrs PHP code
         $parts = [];
-        foreach ($attrs as $k => $v) {
+        foreach ($normalized as $k => $v) {
             $parts[] = var_export($k, true) . ' => ' . $v;
         }
         $attrsCode = '[' . implode(', ', $parts) . ']';
@@ -355,8 +374,9 @@ class Parser
     {
         $attrs = [];
 
+        // 1) key="value" pairs (including colon-bound like :tags="[...]")
         if (preg_match_all(
-            '/([a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/s',
+            '/([:@a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/s',
             $attrStr,
             $matches,
             PREG_SET_ORDER
@@ -365,30 +385,45 @@ class Parser
                 $key = $set[1];
                 $raw = $set[2];
 
-                // Check for {{ expression }} - escaped
-                if (preg_match('/^\{\{\s*(.+?)\s*\}\}$/', $raw, $ex)) {
-                    $attrs[$key] = 'htmlspecialchars((string)(' . $ex[1] . ' ?? \'\'), ENT_QUOTES, \'UTF-8\')';
+                $isBound = str_starts_with($key, ':');
+                if ($isBound) {
+                    // Strip the leading colon for bound attributes
+                    // :tags="['Blog']" → key = 'tags'
+                    $key = substr($key, 1);
                 }
-                // Check for {!! expression !!} - raw
-                elseif (preg_match('/^\{!!\s*(.+?)\s*!!\}$/', $raw, $ex)) {
-                    $attrs[$key] = '(' . $ex[1] . ' ?? \'\')';
+
+                if ($isBound) {
+                    // Bound attribute: treat value as raw PHP expression
+                    // :tags="['Blog', 'Backend']"
+                    // → 'tags' => ['Blog', 'Backend']
+                    $attrs[$key] = $raw;
+                    continue;
                 }
-                // Literal value
-                else {
-                    $attrs[$key] = var_export($raw, true);
+
+                // Non-bound attributes:
+
+                // Escaped expression: {{ $var }}
+                if (preg_match('/^\{\{\s*(.+?)\s*\}\}$/s', $raw, $ex)) {
+                    $attrs[$key] = 'htmlspecialchars((string)(' . $ex[1] . " ?? ''), ENT_QUOTES, 'UTF-8')";
+                    continue;
                 }
+
+                // Raw expression: {!! $var !!}
+                if (preg_match('/^\{!!\s*(.+?)\s*!!\}$/s', $raw, $ex)) {
+                    $attrs[$key] = '(' . $ex[1] . " ?? '')";
+                    continue;
+                }
+
+                // Plain literal string
+                $attrs[$key] = var_export($raw, true);
             }
         }
 
-        // Handle boolean attributes without values (disabled, readonly, etc.)
-        if (preg_match_all(
-            '/\s([a-zA-Z0-9_:-]+)(?=\s|>|\/)/s',
-            $attrStr,
-            $boolMatches
-        )) {
+        // 2) Boolean attributes (e.g. disabled, required, highlight)
+        if (preg_match_all('/\b([a-zA-Z0-9_:-]+)\b/', $attrStr, $boolMatches)) {
             foreach ($boolMatches[1] as $boolAttr) {
-                // Skip if already processed as key=value pair
-                if (!isset($attrs[$boolAttr])) {
+                // Skip already processed key="value" pairs and colon-prefixed keys
+                if (!isset($attrs[$boolAttr]) && $boolAttr[0] !== ':') {
                     $attrs[$boolAttr] = 'true';
                 }
             }

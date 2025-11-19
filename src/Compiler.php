@@ -46,59 +46,64 @@ class Compiler
         // 0) Pre-process code examples to protect template syntax
         $source = $this->preProcessCodeExamples($source);
 
-        // 1) Run parser (handles <x-*>, @slot, @props, :class)
+        // 1) Run parser (handles <x-*>, @slot, @props, layouts, etc.)
         $php = $this->parser->parse($source);
 
-        // 2) New directives - JSON and JavaScript
+        // 2) REMOVE Blade-style comments BEFORE we touch {{ }} or {!! !!}
+        //    This prevents {{-- ... --}} from being treated as an echo
+        //    and generating invalid PHP like "-- Meta Tags --".
+        $php = $this->compileComments($php);
+
+        // 3) New directives - JSON and JavaScript helpers
         $php = $this->compileJson($php);
         $php = $this->compileJs($php);
 
-        // 3) Helper directives - @class() and @style()
+        // 4) Helper directives - @class() and @style()
         $php = $this->compileClassHelper($php);
         $php = $this->compileStyleHelper($php);
 
-        // 4) Form helpers
+        // 5) Form helpers and selection helpers
         $php = $this->compileChecked($php);
         $php = $this->compileSelected($php);
         $php = $this->compileDisabled($php);
         $php = $this->compileReadonly($php);
 
-        // 5) CSRF and Method spoofing
+        // 6) CSRF + method spoofing
         $php = $this->compileCsrf($php);
         $php = $this->compileMethod($php);
 
-        // 6) Environment checks
+        // 7) Environment / auth directives
         $php = $this->compileEnv($php);
-
-        // 7) Authentication checks
         $php = $this->compileAuth($php);
         $php = $this->compileGuest($php);
 
         // 8) Validation helpers
         $php = $this->compileError($php);
+        $php = $this->compileEndError($php);
         $php = $this->compileOld($php);
 
-        // 9) Existing custom directives
+        // 9) Existing custom directives (@upper, @lang)
         $php = $this->compileUpper($php);
         $php = $this->compileLang($php);
 
-        // 10) Process expressions in HTML attributes FIRST
+        // 10) CRITICAL: Process attribute bags in HTML tags FIRST
+        //     This must run before compileEscapedEchoes to prevent escaping of `>`
+        $php = $this->compileAttributeBagEchosInTags($php);
+
+        // 11) Process expressions in HTML attributes
         $php = $this->compileAttributeExpressions($php);
 
-        // 11) Regular escaped and raw echoes
+        // 12) Regular escaped and raw echoes
         $php = $this->compileEscapedEchoes($php);
         $php = $this->compileRawEchoes($php);
 
-        // 12) Debugging directives
+        // 13) Debugging directives
         $php = $this->compileDump($php);
         $php = $this->compileDd($php);
 
-        // 13) Control structures
+        // 14) Control structures
         $php = $this->compileConditionals($php);
         $php = $this->compileLoops($php);
-
-        // 14) Comments
-        $php = $this->compileComments($php);
 
         // 15) Clean up excessive newlines
         $php = preg_replace('/\n{3,}/', "\n\n", $php);
@@ -107,9 +112,10 @@ class Compiler
         // 16) Post-process to restore protected code examples
         $php = $this->postProcessCodeExamples($php);
 
-        // 17) Prepend header
-        return "<?php\ndeclare(strict_types=1);\n/* Compiled from: {$path} */\n?>\n" . $php;
+        // Wrap with PHP tags
+        return $php;
     }
+
 
     /**
      * Compile @json() directive
@@ -406,13 +412,83 @@ class Compiler
     }
 
     /**
-     * Compile escaped echoes {{ }}
+     * Compile escaped echoes {{ }}.
+     *
+     * - Normal variables: escaped with htmlspecialchars
+     *      {{ $title }} → <?= htmlspecialchars((string)($title ?? ''), ENT_QUOTES, 'UTF-8') ?>
+     *
+     * - Slots ($slots / $slot): RAW HTML
+     *      {{ $slots->header }} → <?= (string)($slots->header ?? '') ?>
+     *      {{ $slot }}          → <?= (string)($slot ?? '') ?>
+     *
+     * - Attribute bags ($attrs / $attributes...): RAW HTML
+     *      {{ $attrs->merge([...]) }} → <?= (string)($attrs->merge([...]) ?? '') ?>
      */
     private function compileEscapedEchoes(string $php): string
     {
         return preg_replace_callback(
-            '/\{\{\s*(.+?)\s*\}\}/',
-            fn(array $m) => "\n<?= htmlspecialchars((string)({$m[1]} ?? ''), ENT_QUOTES, 'UTF-8') ?>\n",
+            '/\{\{\s*(.+?)\s*\}\}/s',
+            static function (array $m): string {
+                $expr = trim($m[1]);
+
+                // 1) Slots: raw HTML
+                if (preg_match('/^\$slots->[A-Za-z_][A-Za-z0-9_]*$/', $expr)) {
+                    // e.g. {{ $slots->header }}
+                    return "<?= (string)({$expr} ?? '') ?>";
+                }
+
+                if ($expr === '$slot') {
+                    // e.g. {{ $slot }}
+                    return "<?= (string)({$expr} ?? '') ?>";
+                }
+
+                // 2) Attribute bags: $attrs, $attributes, etc. → raw HTML
+                if (preg_match('/^\$(attrs|attributes)\b/', $expr)) {
+                    // e.g. {{ $attrs->merge(['class' => 'navbar']) }}
+                    return "<?= (string)({$expr} ?? '') ?>";
+                }
+
+                // 3) Everything else: escaped safely
+                return "<?= htmlspecialchars((string)({$expr} ?? ''), ENT_QUOTES, 'UTF-8') ?>";
+            },
+            $php
+        );
+    }
+
+    /**
+     * Handle Blade-style attribute bags INSIDE opening tags:
+     *
+     *   <nav {{ $attrs->merge(['class' => 'navbar']) }}>
+     *
+     * If we let this hit the generic {{ }} compiler, it becomes a standalone
+     * echo between "<nav" and ">" and leaks as:
+     *
+     *   class="navbar navbar-sticky"
+     *   >
+     *
+     * Here we transform the {{ ... }} segment INSIDE the tag into
+     * a proper PHP inline echo, keeping the tag and closing ">" intact.
+     */
+    private function compileAttributeBagEchosInTags(string $php): string
+    {
+        return preg_replace_callback(
+        // Match: "<tag {{ $attrs }}" and optionally capture what comes after including >
+            '/<([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^>]*?)?)\s+\{\{\s*([^}]+?)\s*\}\}(\s*[^<]*?>)/s',
+            static function (array $m): string {
+                $tagName = $m[1];          // e.g. "nav"
+                $beforeAttrs = $m[2];      // e.g. " class='foo'" or empty
+                $expr = trim($m[3]);       // e.g. "$attrs->merge(['class' => 'navbar'])"
+                $after = $m[4];            // e.g. ">" or " class='bar'>"
+
+                // Only touch attribute bags, NOT arbitrary {{ ... }} inside tags
+                if (!preg_match('/^\$(attrs|attributes)\b/', $expr)) {
+                    return $m[0]; // leave unchanged
+                }
+
+                // Turn the attribute bag echo into inline PHP (raw output, no escaping)
+                // and preserve everything that came after
+                return '<' . $tagName . $beforeAttrs . " <?= (string)({$expr} ?? '') ?>" . $after;
+            },
             $php
         );
     }
@@ -423,8 +499,10 @@ class Compiler
     private function compileRawEchoes(string $php): string
     {
         return preg_replace_callback(
-            '/\{!!\s*(.+?)\s*!!\}/',
-            fn(array $m) => "\n<?= {$m[1]} ?? '' ?>\n",
+            '/\{!!\s*(.+?)\s*!!\}/s',
+            static function (array $m): string {
+                return "<?= {$m[1]} ?? '' ?>";
+            },
             $php
         );
     }
@@ -470,17 +548,46 @@ class Compiler
     }
 
     /**
-     * Compile control structures (if, elseif, else, endif)
+     * Compile control structures (if, elseif, else, endif).
+     *
+     * We only compile directives that appear standalone on their own line:
+     *   @if(...)
+     *   @elseif(...)
+     *   @else
+     *   @endif
+     *
+     * This avoids the nested-parentheses bug and stray ")" characters.
      */
     private function compileConditionals(string $php): string
     {
-        $php = preg_replace('/@if\s*\((.+?)\)/', "\n<?php if ($1): ?>\n", $php);
-        $php = preg_replace('/@elseif\s*\((.+?)\)/', "\n<?php elseif ($1): ?>\n", $php);
-        $php = preg_replace('/@else\b/', "\n<?php else: ?>\n", $php);
-        $php = preg_replace('/@endif\b/', "\n<?php endif; ?>\n", $php);
+        // @if (condition)
+        // @if($slots->has('head'))
+        $php = preg_replace(
+            '/^[ \t]*@if\s*\((.*)\)\s*$/m',
+            '<?php if ($1): ?>',
+            $php
+        );
 
-        // Also handle @enderror
-        $php = preg_replace('/@enderror\b/', '<?php endif; ?>', $php);
+        // @elseif (condition)
+        $php = preg_replace(
+            '/^[ \t]*@elseif\s*\((.*)\)\s*$/m',
+            '<?php elseif ($1): ?>',
+            $php
+        );
+
+        // @else
+        $php = preg_replace(
+            '/^[ \t]*@else\s*$/m',
+            '<?php else: ?>',
+            $php
+        );
+
+        // @endif
+        $php = preg_replace(
+            '/^[ \t]*@endif\s*$/m',
+            '<?php endif; ?>',
+            $php
+        );
 
         return $php;
     }
@@ -490,16 +597,21 @@ class Compiler
      */
     private function compileLoops(string $php): string
     {
+        // Support nested parentheses in loop headers
+        $foreachPattern = '/@foreach\s*\(((?>[^()]+|(?R))*)\)/';
+        $forPattern     = '/@for\s*\(((?>[^()]+|(?R))*)\)/';
+        $whilePattern   = '/@while\s*\(((?>[^()]+|(?R))*)\)/';
+
         // @foreach
-        $php = preg_replace('/@foreach\s*\((.+?)\)/', "\n<?php foreach ($1): ?>\n", $php);
+        $php = preg_replace($foreachPattern, "\n<?php foreach ($1): ?>\n", $php);
         $php = preg_replace('/@endforeach\b/', "\n<?php endforeach; ?>\n", $php);
 
         // @for
-        $php = preg_replace('/@for\s*\((.+?)\)/', "\n<?php for ($1): ?>\n", $php);
+        $php = preg_replace($forPattern, "\n<?php for ($1): ?>\n", $php);
         $php = preg_replace('/@endfor\b/', "\n<?php endfor; ?>\n", $php);
 
         // @while
-        $php = preg_replace('/@while\s*\((.+?)\)/', "\n<?php while ($1): ?>\n", $php);
+        $php = preg_replace($whilePattern, "\n<?php while ($1): ?>\n", $php);
         $php = preg_replace('/@endwhile\b/', "\n<?php endwhile; ?>\n", $php);
 
         // Loop control

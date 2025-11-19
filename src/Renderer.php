@@ -62,6 +62,7 @@ final class Renderer
 
             $raw = file_get_contents($sourcePath);
 
+            // Layout handling: extract sections from child and inject into parent
             [$raw, $sections] = $this->extractSections($raw);
 
             if (isset($sections['__extends'])) {
@@ -89,17 +90,24 @@ final class Renderer
                     !is_file($compiledPath)
                     || filemtime($sourcePath) > filemtime($compiledPath)
                 ) {
-                    $ast = $this->parser->parse($raw);
-                    $php = $this->compiler->compile($ast, $sourcePath);
+                    // IMPORTANT: pass RAW source to Compiler.
+                    // Compiler::compile() will call Parser internally.
+                    $php = $this->compiler->compile($raw, $sourcePath);
                     file_put_contents($compiledPath, $php);
                 }
 
                 try {
                     // Make data available globally for slots
-                    $GLOBALS['__data'] = $scope->getCurrentScope();
+                    $GLOBALS['__data']     = $scope->getCurrentScope();
+                    $GLOBALS['__ml_attrs'] = [];
 
                     // Extract data for template
                     extract($scope->getCurrentScope(), EXTR_SKIP);
+
+                    // Ensure $slots is always defined (for layouts using @if($slots->has(...)))
+                    if (!isset($slots)) {
+                        $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
+                    }
 
                     // Include compiled template inside this output buffer
                     include $compiledPath;
@@ -108,15 +116,13 @@ final class Renderer
                     $templateOutput = ob_get_clean();
 
                     // Clean up globals
-                    unset($GLOBALS['__ml_attrs']);
-                    unset($GLOBALS['__data']);
+                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
 
                     return $templateOutput;
                 } catch (Throwable $e) {
                     // Clean up buffer and globals on error
                     ob_end_clean();
-                    unset($GLOBALS['__ml_attrs']);
-                    unset($GLOBALS['__data']);
+                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
 
                     // Enhanced error message with variable context
                     $errorMsg = "Error rendering template: " . $e->getMessage();
@@ -128,44 +134,62 @@ final class Renderer
                 }
             }
 
-            // No cache: compile and eval on the fly
-            $ast = $this->parser->parse($raw);
+            // ==========================
+            // No cache: compile and include on the fly (NO eval)
+            // ==========================
+            // IMPORTANT: pass RAW source to Compiler.
+            // Compiler::compile() will call Parser internally.
+            $php = $this->compiler->compile($raw, $sourcePath);
 
-            $php = $this->compiler->compile($ast, $sourcePath);
-
-            // Strip PHP tags for eval
-            if (str_starts_with($php, '<?php')) {
-                $php = substr($php, 5);
+            // Ensure cache directory exists (we still need a temp file to include)
+            if (!is_dir($this->cacheDir)) {
+                mkdir($this->cacheDir, 0755, true);
             }
-            if (str_ends_with($php, '?>')) {
-                $php = substr($php, 0, -2);
+
+            // Reuse the same compiled path even when cache is disabled
+            $tmpCompiledPath = $compiledPath;
+            file_put_contents($tmpCompiledPath, $php);
+
+            try {
+                // Make data available globally for slots
+                $GLOBALS['__data']     = $scope->getCurrentScope();
+                $GLOBALS['__ml_attrs'] = [];
+
+                // Extract data for the template
+                extract($scope->getCurrentScope(), EXTR_SKIP);
+
+                // Ensure $slots is always defined (for layouts using slot-based regions)
+                if (!isset($slots)) {
+                    $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
+                }
+
+                // Include compiled template inside the current output buffer
+                include $tmpCompiledPath;
+
+                // Get the buffered output
+                $templateOutput = ob_get_clean();
+
+                // Clean up globals
+                unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+
+                // Since caching is disabled, we can optionally remove the temp compiled file
+                @unlink($tmpCompiledPath);
+
+                return $templateOutput;
+            } catch (Throwable $e) {
+                // Clean buffers and globals on error
+                ob_end_clean();
+                unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
+
+                throw new RuntimeException(
+                    "Error rendering template (no-cache): "
+                    . $e->getMessage()
+                    . " in " . $e->getFile()
+                    . ":" . $e->getLine(),
+                    0,
+                    $e
+                );
             }
-
-            // Use a nested output buffer for eval code
-            ob_start();
-
-            // Make data available globally for slots
-            $GLOBALS['__data'] = $scope->getCurrentScope();
-
-            // Set an empty array for component attributes
-            $GLOBALS['__ml_attrs'] = [];
-
-            // Extract data from the root scope only
-            extract($scope->getCurrentScope(), EXTR_SKIP);
-
-            // Evaluate template code
-            eval($php);
-
-            // Get the buffered output from the evaluated code
-            $evalOutput = ob_get_clean();
-
-            // Clean up global
-            unset($GLOBALS['__ml_attrs']);
-            unset($GLOBALS['__data']);
-
-            // Clear the main buffer and return the eval output
-            ob_end_clean();
-            return $evalOutput;
         } catch (Throwable $e) {
             // Make sure to clean all buffers
             while (ob_get_level() > 0) {
@@ -173,8 +197,7 @@ final class Renderer
             }
 
             // Clean up globals if exception occurs
-            unset($GLOBALS['__ml_attrs']);
-            unset($GLOBALS['__data']);
+            unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
 
             throw $e;
         }
@@ -194,19 +217,35 @@ final class Renderer
         ob_start();
 
         try {
-            // Process the component file through the full template pipeline
-            $source = file_get_contents($path);
-            $processed = $this->parser->parse($source);
-            $compiled = $this->compiler->compile($processed, $path);
+            $source   = file_get_contents($path);
+            // PASS RAW SOURCE to Compiler; it will call Parser internally
+            $compiled = $this->compiler->compile($source, $path);
 
-            // Execute the compiled code with the provided data
+            // Ensure cache dir exists for temp component file
+            if (!is_dir($this->cacheDir)) {
+                mkdir($this->cacheDir, 0755, true);
+            }
+
+            $tmpPath = $this->cacheDir . DIRECTORY_SEPARATOR . 'cmp_' . md5($path . microtime(true)) . '.php';
+            file_put_contents($tmpPath, $compiled);
+
+            // Make component data available
             extract($data, EXTR_SKIP);
-            eval('?>' . substr($compiled, strpos($compiled, '?>') + 2));
+
+            // Execute compiled component template
+            include $tmpPath;
+
+            // Clean temp file
+            @unlink($tmpPath);
 
             return ob_get_clean();
         } catch (\Throwable $e) {
             ob_end_clean();
-            throw new RuntimeException("Error rendering component {$path}: " . $e->getMessage(), 0, $e);
+            throw new RuntimeException(
+                "Error rendering component {$path}: " . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
