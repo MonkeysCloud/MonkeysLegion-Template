@@ -276,14 +276,13 @@ class Compiler
      */
     private function compileEnv(string $php): string
     {
-        // @env('production')
         $php = preg_replace_callback(
             '/@env\(["\'](.+?)["\']\)/',
-            fn(array $m) => "<?php if ((getenv('APP_ENV') ?? 'production') === '{$m[1]}'): ?>",
+            fn(array $m) =>
+            "<?php if ((\$_ENV['APP_ENV'] ?? \$_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === '{$m[1]}'): ?>",
             $php
         );
 
-        // @endenv
         $php = preg_replace('/@endenv\b/', '<?php endif; ?>', $php);
 
         return $php;
