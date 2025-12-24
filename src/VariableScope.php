@@ -11,19 +11,19 @@ namespace MonkeysLegion\Template;
  */
 class VariableScope
 {
-    /** @var array Stack of variable scopes, with the current scope at the end */
+    /** @var array<int, array<string, mixed>> Stack of variable scopes, with the current scope at the end */
     private array $scopeStack = [];
 
     /** @var VariableScope|null The current instance for the request */
     private static ?VariableScope $instance = null;
 
-    /** @var array Global data accessible to root templates only */
+    /** @var array<string, mixed> Global data accessible to root templates only */
     private array $globalData = [];
 
     /**
      * Create a new VariableScope instance
-     * 
-     * @param array $initialData Initial variables for root scope
+     *
+     * @param array<string, mixed> $initialData Initial variables for root scope
      */
     public function __construct(array $initialData = [])
     {
@@ -34,7 +34,7 @@ class VariableScope
 
     /**
      * Get the current VariableScope instance
-     * 
+     *
      * @return VariableScope
      */
     public static function getCurrent(): VariableScope
@@ -48,7 +48,7 @@ class VariableScope
 
     /**
      * Set the current VariableScope instance
-     * 
+     *
      * @param VariableScope $scope
      * @return void
      */
@@ -59,9 +59,9 @@ class VariableScope
 
     /**
      * Create a new completely isolated scope with only explicitly passed variables
-     * 
-     * @param array $passedVars Variables explicitly passed to this scope
-     * @param array $declaredParams Parameters declared with default values
+     *
+     * @param array<string, mixed> $passedVars Variables explicitly passed to this scope
+     * @param array<string, mixed> $declaredParams Parameters declared with default values
      * @return void
      */
     public function createIsolatedScope(array $passedVars = [], array $declaredParams = []): void
@@ -77,8 +77,8 @@ class VariableScope
     /**
      * Create a new scope that inherits specified variables from parent
      * Used for includes which may need some parent context
-     * 
-     * @param array $additionalVars Additional variables for this scope
+     *
+     * @param array<string, mixed> $additionalVars Additional variables for this scope
      * @return void
      */
     public function pushScope(array $additionalVars = []): void
@@ -92,7 +92,7 @@ class VariableScope
 
     /**
      * Remove the current scope and return to parent scope
-     * 
+     *
      * @return void
      */
     public function popScope(): void
@@ -104,8 +104,8 @@ class VariableScope
 
     /**
      * Set global data accessible to root templates
-     * 
-     * @param array $data Global data
+     *
+     * @param array<string, mixed> $data Global data
      * @return void
      */
     public function setGlobalData(array $data): void
@@ -120,8 +120,8 @@ class VariableScope
 
     /**
      * Get the current scope's variables
-     * 
-     * @return array
+     *
+     * @return array<string, mixed>
      */
     public function getCurrentScope(): array
     {
@@ -130,7 +130,7 @@ class VariableScope
 
     /**
      * Get a variable from the current scope
-     * 
+     *
      * @param string $name Variable name
      * @param mixed $default Default value if not found
      * @return mixed
@@ -143,7 +143,7 @@ class VariableScope
 
     /**
      * Set a variable in the current scope
-     * 
+     *
      * @param string $name Variable name
      * @param mixed $value Value to set
      * @return void
@@ -156,7 +156,7 @@ class VariableScope
 
     /**
      * Check if a variable exists in the current scope
-     * 
+     *
      * @param string $name Variable name
      * @return bool
      */
@@ -169,7 +169,7 @@ class VariableScope
     /**
      * Reset the scope stack to initial state
      * Useful for testing or starting fresh
-     * 
+     *
      * @return void
      */
     public function reset(): void
@@ -180,11 +180,30 @@ class VariableScope
     /**
      * Get the depth of the current scope stack
      * Useful for debugging
-     * 
+     *
      * @return int
      */
     public function getDepth(): int
     {
         return count($this->scopeStack);
+    }
+
+    /**
+     * Get a variable from the current scope or any parent scope (for @aware)
+     *
+     * @param string $name Variable name
+     * @param mixed $default Default value if not found in any scope
+     * @return mixed
+     */
+    public function getAware(string $name, mixed $default = null): mixed
+    {
+        // Search from current scope up to root
+        for ($i = count($this->scopeStack) - 1; $i >= 0; $i--) {
+            if (array_key_exists($name, $this->scopeStack[$i])) {
+                return $this->scopeStack[$i][$name];
+            }
+        }
+
+        return $default;
     }
 }

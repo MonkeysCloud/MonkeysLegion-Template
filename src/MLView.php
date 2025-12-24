@@ -22,17 +22,20 @@ class MLView
      * @param string   $cacheDir  Directory where compiled templates are stored
      */
     public function __construct(
-        private Loader   $loader,
+        /** @phpstan-ignore property.onlyWritten */
+        private Loader $loader,
+        /** @phpstan-ignore property.onlyWritten */
         private Compiler $compiler,
         private Renderer $renderer,
-        private string   $cacheDir
-    ) {}
+        private string $cacheDir
+    ) {
+    }
 
     /**
      * Render a template by name with the provided data.
      *
      * @param string $name Template name (e.g. 'home' → resources/views/home.ml.php)
-     * @param array  $data Variables to extract into template scope
+     * @param array<string, mixed> $data Variables to extract into template scope
      * @return string      Rendered HTML
      * @throws RuntimeException on missing template or compile errors
      */
@@ -48,6 +51,10 @@ class MLView
     public function clearCache(): void
     {
         $files = glob(rtrim($this->cacheDir, '/\\') . DIRECTORY_SEPARATOR . '*.php');
+        if ($files === false) {
+            return;
+        }
+
         foreach ($files as $file) {
             @unlink($file);
         }

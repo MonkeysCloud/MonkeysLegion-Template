@@ -15,8 +15,12 @@ namespace MonkeysLegion\Template\Support;
  */
 class AttributeBag
 {
+    /** @var array<string, mixed> */
     private array $attributes = [];
 
+    /**
+     * @param array<string, mixed> $attributes
+     */
     public function __construct(array $attributes = [])
     {
         $this->attributes = $attributes;
@@ -24,6 +28,8 @@ class AttributeBag
 
     /**
      * Get all attributes as array
+     *
+     * @return array<string, mixed>
      */
     public function all(): array
     {
@@ -57,6 +63,8 @@ class AttributeBag
 
     /**
      * Merge attributes with defaults, with special handling for 'class'
+     *
+     * @param array<string, mixed> $defaults
      */
     public function merge(array $defaults = []): self
     {
@@ -78,6 +86,11 @@ class AttributeBag
 
     /**
      * Get only specified attributes (supports wildcards)
+     */
+    /**
+     * Get only specified attributes (supports wildcards)
+     *
+     * @param array<int, string> $keys
      */
     public function only(array $keys): self
     {
@@ -102,6 +115,11 @@ class AttributeBag
 
     /**
      * Get all attributes except specified ones (supports wildcards)
+     */
+    /**
+     * Get all attributes except specified ones (supports wildcards)
+     *
+     * @param array<int, string> $keys
      */
     public function except(array $keys): self
     {
@@ -161,7 +179,7 @@ class AttributeBag
                 }
             } elseif (is_scalar($value)) {
                 // Regular scalar attributes
-                if ($value !== null && $value !== '') {
+                if ($value !== '') {
                     $escaped = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
                     $parts[] = "{$key}=\"{$escaped}\"";
                 }
@@ -190,6 +208,8 @@ class AttributeBag
      * - 'btn primary'
      * - ['btn', 'text-sm']
      * - ['btn' => true, 'hidden' => false]
+     *
+     * @param string|array<int|string, mixed>|null $value
      */
     private function normalizeClassValue(string|array|null $value): string
     {
@@ -224,8 +244,8 @@ class AttributeBag
     /**
      * Merge CSS classes intelligently
      *
-     * @param string|array $default
-     * @param string|array $override
+     * @param string|array<int|string, mixed> $default
+     * @param string|array<int|string, mixed> $override
      */
     private function mergeClasses(string|array $default, string|array $override): string
     {
@@ -244,7 +264,7 @@ class AttributeBag
     /**
      * Create conditional classes (Alpine.js/Vue style)
      *
-     * @param array $classes Array of class names or conditions
+     * @param array<int|string, mixed> $classes Array of class names or conditions
      * Example: ['base-class', $active ? 'active' : '', 'btn' => $isPrimary]
      */
     public static function conditional(array $classes): string

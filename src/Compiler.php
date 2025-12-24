@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template;
 
+use MonkeysLegion\Template\Contracts\CompilerInterface;
+
 /**
  * Enhanced Compiler for MLView templates.
  *
@@ -32,9 +34,11 @@ namespace MonkeysLegion\Template;
  *  7. Post-process code examples
  *  8. Prepend PHP header
  */
-class Compiler
+class Compiler implements CompilerInterface
 {
-    public function __construct(private Parser $parser) {}
+    public function __construct(private \MonkeysLegion\Template\Contracts\ParserInterface $parser)
+    {
+    }
 
     /**
      * @param string $source Raw template input
@@ -58,6 +62,14 @@ class Compiler
         // 3) New directives - JSON and JavaScript helpers
         $php = $this->compileJson($php);
         $php = $this->compileJs($php);
+
+        // -- Competitive Features --
+        $php = $this->compileVerbatim($php);
+        $php = $this->compileInject($php);
+        $php = $this->compileStack($php);
+        $php = $this->compileOnce($php);
+        $php = $this->compileAware($php);
+        $php = $this->compileIncludes($php);
 
         // 4) Helper directives - @class() and @style()
         $php = $this->compileClassHelper($php);
@@ -100,10 +112,11 @@ class Compiler
 
         // 13) Control structures
         $php = $this->compileConditionals($php);
+        $php = $this->compileConditionalsSugar($php);
         $php = $this->compileLoops($php);
 
         // 14) Clean up excessive newlines
-        $php = preg_replace('/\n{3,}/', "\n\n", $php);
+        $php = (string)preg_replace('/\n{3,}/', "\n\n", $php);
         $php = trim($php);
 
         // 15) Post-process to restore protected code examples
@@ -114,7 +127,7 @@ class Compiler
         // If the compiled output starts with a PHP open tag,
         // insert the `use` statement right after it.
         if (str_starts_with($php, '<?php')) {
-            $php = preg_replace(
+            $php = (string)preg_replace(
                 '/^<\?php(\s*)/i',
                 "<?php$1{$useHeader}",
                 $php,
@@ -135,7 +148,7 @@ class Compiler
      */
     private function compileJson(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@json\((.+?)\)/',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>",
             $php
@@ -148,7 +161,7 @@ class Compiler
      */
     private function compileJs(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@js\((.+?)\)/',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_UNESCAPED_UNICODE) ?>",
             $php
@@ -158,11 +171,11 @@ class Compiler
     /**
      * Compile @class() helper
      * Alternative syntax for conditional classes
-     * @class(['btn', 'active' => $isActive])
+     * `@class(['btn', 'active' => $isActive])`
      */
     private function compileClassHelper(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@class\((.+?)\)/',
             fn(array $m) => "<?= \\MonkeysLegion\\Template\\Support\\AttributeBag::conditional({$m[1]}) ?>",
             $php
@@ -172,13 +185,13 @@ class Compiler
     /**
      * Compile @style() helper
      * Conditional inline styles
-     * @style(['display: block', 'color: red' => $hasError])
+     * `@style(['display: block', 'color: red' => $hasError])`
      */
     private function compileStyleHelper(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@style\((.+?)\)/',
-            function(array $m) {
+            function (array $m) {
                 return "<?php \$__styles = []; " .
                     "foreach ({$m[1]} as \$__k => \$__v) { " .
                     "if (is_int(\$__k) && \$__v) \$__styles[] = \$__v; " .
@@ -195,7 +208,7 @@ class Compiler
      */
     private function compileChecked(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@checked\((.+?)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'checked' : '' ?>",
             $php
@@ -208,7 +221,7 @@ class Compiler
      */
     private function compileSelected(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@selected\((.+?)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'selected' : '' ?>",
             $php
@@ -221,7 +234,7 @@ class Compiler
      */
     private function compileDisabled(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@disabled\((.+?)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'disabled' : '' ?>",
             $php
@@ -234,7 +247,7 @@ class Compiler
      */
     private function compileReadonly(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@readonly\((.+?)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'readonly' : '' ?>",
             $php
@@ -247,7 +260,7 @@ class Compiler
      */
     private function compileCsrf(string $php): string
     {
-        return preg_replace(
+        return (string)preg_replace(
             '/@csrf\b/',
             "<?php if (function_exists('csrf_field')) { echo csrf_field(); } " .
             "elseif (isset(\$_SESSION['csrf_token'])) { " .
@@ -263,7 +276,7 @@ class Compiler
      */
     private function compileMethod(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@method\(["\'](.+?)["\']\)/',
             fn(array $m) => "<?= '<input type=\"hidden\" name=\"_method\" value=\"{$m[1]}\">' ?>",
             $php
@@ -276,14 +289,14 @@ class Compiler
      */
     private function compileEnv(string $php): string
     {
-        $php = preg_replace_callback(
+        $php = (string)preg_replace_callback(
             '/@env\(["\'](.+?)["\']\)/',
             fn(array $m) =>
             "<?php if ((\$_ENV['APP_ENV'] ?? \$_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === '{$m[1]}'): ?>",
             $php
         );
 
-        $php = preg_replace('/@endenv\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@endenv\b/', '<?php endif; ?>', $php);
 
         return $php;
     }
@@ -294,13 +307,13 @@ class Compiler
      */
     private function compileAuth(string $php): string
     {
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/@auth\b/',
             "<?php if (function_exists('auth') && auth()->check()): ?>",
             $php
         );
 
-        $php = preg_replace('/@endauth\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@endauth\b/', '<?php endif; ?>', $php);
 
         return $php;
     }
@@ -311,13 +324,13 @@ class Compiler
      */
     private function compileGuest(string $php): string
     {
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/@guest\b/',
             "<?php if (!function_exists('auth') || !auth()->check()): ?>",
             $php
         );
 
-        $php = preg_replace('/@endguest\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@endguest\b/', '<?php endif; ?>', $php);
 
         return $php;
     }
@@ -328,9 +341,9 @@ class Compiler
      */
     private function compileError(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@error\(["\'](.+?)["\']\)/',
-            function(array $m) {
+            function (array $m) {
                 $field = $m[1];
                 return "<?php if (isset(\$errors) && \$errors->has('{$field}')): " .
                     "\$__error_message = \$errors->first('{$field}'); ?>";
@@ -344,7 +357,7 @@ class Compiler
      */
     private function compileEndError(string $php): string
     {
-        return preg_replace('/@enderror\b/', '<?php endif; ?>', $php);
+        return (string)preg_replace('/@enderror\b/', '<?php endif; ?>', $php);
     }
 
     /**
@@ -353,9 +366,9 @@ class Compiler
      */
     private function compileOld(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@old\(["\'](.+?)["\'](?:\s*,\s*(.+?))?\)/',
-            function(array $m) {
+            function (array $m) {
                 $field = $m[1];
                 $default = $m[2] ?? "''";
                 return "<?= htmlspecialchars((string)(function_exists('old') ? old('{$field}', {$default}) : " .
@@ -370,7 +383,7 @@ class Compiler
      */
     private function compileUpper(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@upper\(([^)]+)\)/',
             fn(array $m) => "\n<?= htmlspecialchars(strtoupper((string)({$m[1]} ?? '')), ENT_QUOTES, 'UTF-8') ?>\n",
             $php
@@ -382,7 +395,7 @@ class Compiler
      */
     private function compileLang(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             "/@lang\((?:'|\")(.+?)(?:'|\")(?:\s*,\s*(\[[^\]]*\]))?\)/",
             function (array $m) {
                 $key = $m[1];
@@ -398,7 +411,7 @@ class Compiler
      */
     private function compileAttributeExpressions(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/<([^>]+?)(\s+[a-zA-Z0-9_:-]+\s*=\s*["\'])([^"\']*?)(\{\{|\{!!)(.*?)(\}\}|!!\})([^"\']*?)(["\'])/s',
             function (array $m) {
                 $tagStart = $m[1];
@@ -437,7 +450,7 @@ class Compiler
      */
     private function compileEscapedEchoes(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/\{\{\s*(.+?)\s*\}\}/s',
             static function (array $m): string {
                 $expr = trim($m[1]);
@@ -471,7 +484,7 @@ class Compiler
      */
     private function compileRawEchoes(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/\{!!\s*(.+?)\s*!!\}/s',
             static function (array $m): string {
                 return "<?= {$m[1]} ?? '' ?>";
@@ -485,9 +498,9 @@ class Compiler
      */
     private function compileDump(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@dump\(\s*((?>[^()]+|(?R))*)\s*\)/s',
-            function(array $m) {
+            function (array $m) {
                 return "\n<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
                     "echo '<pre style=\"margin:0;font-family:monospace;font-size:14px;\">';" .
@@ -504,9 +517,9 @@ class Compiler
      */
     private function compileDd(string $php): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@dd\(\s*((?>[^()]+|(?R))*)\s*\)/s',
-            function(array $m) {
+            function (array $m) {
                 return "\n<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
                     "echo '<h3 style=\"margin:0 0 0.5rem;color:#c00;\">Dump and Die</h3>';" .
@@ -524,10 +537,10 @@ class Compiler
      * Compile control structures (if, elseif, else, endif).
      *
      * We only compile directives that appear standalone on their own line:
-     *   @if(...)
-     *   @elseif(...)
-     *   @else
-     *   @endif
+     *   `@if(...)`
+     *   `@elseif(...)`
+     *   `@else`
+     *   `@endif`
      *
      * This avoids the nested-parentheses bug and stray ")" characters.
      */
@@ -535,28 +548,28 @@ class Compiler
     {
         // @if (condition)
         // @if($slots->has('head'))
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/^[ \t]*@if\s*\((.*)\)\s*$/m',
             '<?php if ($1): ?>',
             $php
         );
 
         // @elseif (condition)
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/^[ \t]*@elseif\s*\((.*)\)\s*$/m',
             '<?php elseif ($1): ?>',
             $php
         );
 
         // @else
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/^[ \t]*@else\s*$/m',
             '<?php else: ?>',
             $php
         );
 
         // @endif
-        $php = preg_replace(
+        $php = (string)preg_replace(
             '/^[ \t]*@endif\s*$/m',
             '<?php endif; ?>',
             $php
@@ -566,7 +579,38 @@ class Compiler
     }
 
     /**
-     * Compile loops (foreach, for, while)
+     * Compile conditional sugars: @unless, @isset, @empty, @switch, @case, @default
+     */
+    private function compileConditionalsSugar(string $php): string
+    {
+        // @unless(cond) -> if (! (cond))
+        $php = (string)preg_replace('/^[ \t]*@unless\s*\((.*)\)\s*$/m', '<?php if (! ($1)): ?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@endunless\s*$/m', '<?php endif; ?>', $php);
+
+        // @isset(var) -> if (isset(var))
+        $php = (string)preg_replace('/^[ \t]*@isset\s*\((.*)\)\s*$/m', '<?php if (isset($1)): ?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@endisset\s*$/m', '<?php endif; ?>', $php);
+
+        // @empty(var) -> if (empty(var))
+        $php = (string)preg_replace('/^[ \t]*@empty\s*\((.*)\)\s*$/m', '<?php if (empty($1)): ?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@endempty\s*$/m', '<?php endif; ?>', $php);
+
+        // @switch($var)
+        $php = (string)preg_replace('/^[ \t]*@switch\s*\((.*)\)\s*$/m', '<?php switch($1): ?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@endswitch\s*$/m', '<?php endswitch; ?>', $php);
+
+        // @case('val') - must close PHP tag so HTML content can be rendered
+        $php = (string)preg_replace('/^[ \t]*@case\s*\((.*)\)\s*$/m', '<?php case $1: ?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@default\s*$/m', '<?php default: ?>', $php);
+
+        // @break - must be in PHP mode
+        $php = (string)preg_replace('/^[ \t]*@break\s*$/m', '<?php break; ?>', $php);
+
+        return $php;
+    }
+
+    /**
+     * Compile loops (foreach, for, while) with $loop variable support
      */
     private function compileLoops(string $php): string
     {
@@ -575,21 +619,217 @@ class Compiler
         $forPattern     = '/@for\s*\(((?>[^()]+|(?R))*)\)/';
         $whilePattern   = '/@while\s*\(((?>[^()]+|(?R))*)\)/';
 
-        // @foreach
-        $php = preg_replace($foreachPattern, "\n<?php foreach ($1): ?>\n", $php);
-        $php = preg_replace('/@endforeach\b/', "\n<?php endforeach; ?>\n", $php);
+        // @foreach with $loop variable
+        // We need to manage the stack.
+        // We'll wrap the loop in a closure or just use variable stack management inline?
+        // Inline is more performant but verbose PHP.
+        // Let's use the static helper Loop::start()
+
+        $php = (string)preg_replace_callback($foreachPattern, function ($m) {
+            $expression = $m[1]; // e.g. "$users as $user"
+            // We need to pass the "list" to Loop::start.
+            // But we only have "$users as $user". We need to extract "$users".
+            // Regex to split " as "
+            if (preg_match('/^(.*)\s+as\s+(.*)$/i', $expression, $parts)) {
+                $iterable = $parts[1]; // $users
+                // We start the loop
+                return "<?php \$__currentLoopData = {$iterable}; \$this->addLoop(\$__currentLoopData); foreach(\$__currentLoopData as {$parts[2]}): \$loop = \$this->getLastLoop(); ?>";
+            }
+            // Fallback if regex fails (unlikely for valid foreach)
+            return "<?php foreach({$expression}): ?>";
+        }, $php);
+
+        // End foreach
+        // We need to pop loop and tick before ending? No, we tick at end of loop body for next iteration?
+        // Actually, if we tick at end, the loop check happens, then loop starts.
+        // Wait, foreach structure: foreach(...) { BODY }
+        // We want $loop->iteration to increment.
+        // If we put tick() at end of BODY:
+        // Iter 1: index 0. End of body: index becomes 1.
+        // Iter 2 starts: index is 1. Correct.
+        $php = (string)preg_replace('/@endforeach\b/', "<?php \$this->getLastLoop()->tick(); endforeach; \$this->popLoop(); \$loop = \$this->getLastLoop(); ?>", $php);
 
         // @for
-        $php = preg_replace($forPattern, "\n<?php for ($1): ?>\n", $php);
-        $php = preg_replace('/@endfor\b/', "\n<?php endfor; ?>\n", $php);
+        $php = (string)preg_replace($forPattern, "<?php for ($1): ?>", $php);
+        $php = (string)preg_replace('/@endfor\b/', "<?php endfor; ?>", $php);
 
         // @while
-        $php = preg_replace($whilePattern, "\n<?php while ($1): ?>\n", $php);
-        $php = preg_replace('/@endwhile\b/', "\n<?php endwhile; ?>\n", $php);
+        $php = (string)preg_replace($whilePattern, "<?php while ($1): ?>", $php);
+        $php = (string)preg_replace('/@endwhile\b/', "<?php endwhile; ?>", $php);
 
         // Loop control
-        $php = preg_replace('/@break\b/', '<?php break; ?>', $php);
-        $php = preg_replace('/@continue\b/', '<?php continue; ?>', $php);
+        $php = (string)preg_replace('/@break\b/', '<?php break; ?>', $php);
+        $php = (string)preg_replace('/@continue\b/', '<?php continue; ?>', $php);
+
+        return $php;
+    }
+
+    /**
+     * Directive: inject('service', 'App\Service')
+     */
+    private function compileInject(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@inject\(\s*[\'"](.+?)[\'"]\s*,\s*[\'"](.+?)[\'"]\s*\)/',
+            function ($m) {
+                // $1 = variable name (e.g. 'metrics')
+                // $2 = service class/id (e.g. 'App\Services\Metrics')
+                // We presume user has a container or we use 'new' if simple?
+                // For now, let's assume a generic `app()` helper or `Container::getInstance()->make()`.
+                // If neither exists, we might fallback to `new $class`.
+                // Let's assume `resolve($class)` or provided $__container?
+                // Safest default for this package: try global function `app()`, then `resolve()`, then `new`.
+                return "<?php \${$m[1]} = function_exists('app') ? app('{$m[2]}') : (function_exists('resolve') ? resolve('{$m[2]}') : new \\{$m[2]}()); ?>";
+            },
+            $php
+        );
+    }
+
+    /**
+     * Directive: stack('js'), push('js'), prepend('js')
+     */
+    private function compileStack(string $php): string
+    {
+        // @stack('name') -> yieldPush('name')
+        $php = (string)preg_replace_callback(
+            '/@stack\([\'"](.+?)[\'"]\)/',
+            fn($m) => "<?= \$this->yieldPush('{$m[1]}') ?>",
+            $php
+        );
+
+        // @push('name')
+        $php = (string)preg_replace_callback(
+            '/@push\([\'"](.+?)[\'"]\)/',
+            fn($m) => "<?php \$this->startPush('{$m[1]}'); ?>",
+            $php
+        );
+        $php = (string)preg_replace('/@endpush\b/', "<?php \$this->stopPush(); ?>", $php);
+
+        // @prepend('name')
+        $php = (string)preg_replace_callback(
+            '/@prepend\([\'"](.+?)[\'"]\)/',
+            fn($m) => "<?php \$this->startPrepend('{$m[1]}'); ?>",
+            $php
+        );
+        $php = (string)preg_replace('/@endprepend\b/', "<?php \$this->stopPrepend(); ?>", $php);
+
+        return $php;
+    }
+
+    /**
+     * Directive: once ... endonce
+     */
+    private function compileOnce(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@once(.*?)@endonce/s',
+            function ($m) {
+                // We need a unique hash for the content or location.
+                // Since this is compile time, we can use md5 of the content + random salt?
+                // But wait, the content might be dynamic.
+                // The hash should be based on the location in the file (idempotency by call site).
+                // Or simply md5($m[1]). If two @once blocks have identical content, should they both run?
+                // Usually @once means "run this block only once per request".
+                // If I have 2 components with same @once code, it should only run once TOTAL.
+                $hash = md5($m[1]);
+                return "<?php if (\$this->addOnceHash('{$hash}')): ?>{$m[1]}<?php endif; ?>";
+            },
+            $php
+        );
+    }
+
+    /**
+     * Directive: verbatim ... endverbatim
+     */
+    private function compileVerbatim(string $php): string
+    {
+        // We simply replace {{ }} placeholders to avoid compilation,
+        // but `preProcessCodeExamples` (step 0) handles generic protection.
+        // Actually, `preProcessCodeExamples` handles `<code>` blocks but not `@verbatim`.
+        // Let's implement it similar to preProcess.
+        // BUT, we are at step 3. The parser (step 1) ran.
+        // `preProcessCodeExamples` ran at step 0.
+        // Maybe we should have handled @verbatim in step 0?
+        // If we do it here, we might have already parsed some things?
+        // Actually, @verbatim is for Vue/Alpine {{ }} tags.
+        // If we just protect them from `compileEscapedEchoes` (step 11) that's enough.
+
+        return (string)preg_replace_callback(
+            '/@verbatim(.*?)@endverbatim/s',
+            function ($m) {
+                $content = $m[1];
+                // We need to prevent `compileEscapedEchoes` from touching this.
+                // We can use the same trick: replace with placeholders?
+                $content = str_replace('{{', '___MLVIEW_OPEN_CURLY___', $content);
+                $content = str_replace('}}', '___MLVIEW_CLOSE_CURLY___', $content);
+                return $content;
+            },
+            $php
+        );
+    }
+
+    /**
+     * Directive: aware(['key' => 'default'])
+     */
+    private function compileAware(string $php): string
+    {
+        // @aware(['color' => 'gray'])
+        // We want to inject these variables from PARENT scopes if missing in current.
+        // This is tricky during compilation because scoping is runtime.
+        // But we generate runtime code:
+        // foreach ($defaults as $k => $v) $k = $scope->getAware($k, $v);
+
+        return (string)preg_replace_callback(
+            '/@aware\((.+?)\)/',
+            function ($m) {
+                return "<?php foreach ({$m[1]} as \$__k => \$__v) { \$\$__k = \MonkeysLegion\Template\VariableScope::getCurrent()->getAware(\$__k, \$__v); } ?>";
+            },
+            $php
+        );
+    }
+
+    /**
+     * @includeWhen, @includeUnless, @includeFirst, @each
+     */
+    private function compileIncludes(string $php): string
+    {
+        // @includeWhen($bool, 'view', ['data'])
+        $php = (string)preg_replace_callback(
+            '/@includeWhen\((.+?),\s*[\'"](.+?)[\'"](?:,\s*(.+?))?\)/',
+            fn($m) => "<?php if({$m[1]}) echo \$this->render('{$m[2]}', " . ($m[3] ?? '[]') . "); ?>",
+            $php
+        );
+
+        // @includeUnless($bool, 'view', ['data'])
+        $php = (string)preg_replace_callback(
+            '/@includeUnless\((.+?),\s*[\'"](.+?)[\'"](?:,\s*(.+?))?\)/',
+            fn($m) => "<?php if(!({$m[1]})) echo \$this->render('{$m[2]}', " . ($m[3] ?? '[]') . "); ?>",
+            $php
+        );
+
+        // @each('view', $collection, 'variable', 'emptyView')
+        $php = (string)preg_replace_callback(
+            '/@each\([\'"](.+?)[\'"]\s*,\s*(.+?)\s*,\s*[\'"](.+?)[\'"](?:\s*,\s*[\'"](.+?)[\'"])?\)/',
+            function ($m) {
+                $view = $m[1];
+                $iterable = $m[2];
+                $var = $m[3];
+                $empty = $m[4] ?? 'null';
+
+                // We loop and render.
+                return "<?php 
+                    \$__empty = true;
+                    foreach({$iterable} as \$__item) {
+                        \$__empty = false;
+                        echo \$this->render('{$view}', ['{$var}' => \$__item]);
+                    }
+                    if (\$__empty && '{$empty}' !== 'null') {
+                        echo \$this->render('{$empty}');
+                    }
+                ?>";
+            },
+            $php
+        );
 
         return $php;
     }
@@ -599,27 +839,27 @@ class Compiler
      */
     private function compileComments(string $php): string
     {
-        return preg_replace('/\{\{--.*?--\}\}/s', '', $php);
+        return (string)preg_replace('/\{\{--.*?--\}\}/s', '', $php);
     }
 
     /**
-     * Compile @php ... @endphp blocks and inline @php(...)
+     * Compile `@php ... @endphp` blocks and inline `@php(...)`
      *
      * Example:
-     *   @php
+     *   `@php`
      *       $x = 1;
      *       dump($x);
-     *   @endphp
+     *   `@endphp`
      *
-     *   @php($foo = 'bar')
+     *   `@php($foo = 'bar')`
      */
     private function compilePhpBlocks(string $php): string
     {
         // Replace @php with opening PHP tag
-        $php = preg_replace('/^[ \t]*@php\s*$/m', '<?php', $php);
+        $php = (string)preg_replace('/^[ \t]*@php\s*$/m', '<?php', $php);
 
         // Replace @endphp with closing PHP tag
-        $php = preg_replace('/^[ \t]*@endphp\s*$/m', '?>', $php);
+        $php = (string)preg_replace('/^[ \t]*@endphp\s*$/m', '?>', $php);
 
         return $php;
     }
@@ -630,10 +870,10 @@ class Compiler
     private function preProcessCodeExamples(string $source): string
     {
         // First process explicit escapes (@@ to represent literal @)
-        $source = preg_replace('/@@([a-zA-Z0-9_]+)/', '___MLVIEW_ESCAPED_AT___$1', $source);
+        $source = (string)preg_replace('/@@([a-zA-Z0-9_]+)/', '___MLVIEW_ESCAPED_AT___$1', $source);
 
         // Process code blocks
-        $source = preg_replace_callback(
+        $source = (string)preg_replace_callback(
             '/<code[^>]*>(.*?)<\/code>/s',
             function (array $matches) {
                 $code = $matches[1];
@@ -645,7 +885,7 @@ class Compiler
                 }
 
                 // Protect double-escaped @
-                $code = preg_replace('/@@([a-zA-Z0-9_]+)/', '___MLVIEW_DOUBLE_AT___$1', $code);
+                $code = (string)preg_replace('/@@([a-zA-Z0-9_]+)/', '___MLVIEW_DOUBLE_AT___$1', $code);
 
                 // Replace template syntax
                 $code = str_replace('{{', '___MLVIEW_OPEN_CURLY___', $code);
@@ -667,18 +907,18 @@ class Compiler
                 ];
 
                 foreach ($directives as $directive) {
-                    $code = preg_replace('/@' . $directive . '\b/', '___MLVIEW_DIRECTIVE___' . $directive, $code);
+                    $code = (string)preg_replace('/@' . $directive . '\b/', '___MLVIEW_DIRECTIVE___' . $directive, $code);
                 }
 
                 // Generic @ protection
-                $code = preg_replace('/@([a-zA-Z0-9_]+)/', '___MLVIEW_AT___$1', $code);
+                $code = (string)preg_replace('/@([a-zA-Z0-9_]+)/', '___MLVIEW_AT___$1', $code);
 
                 return '<code' . $attributes . '>' . $code . '</code>';
             },
             $source
         );
 
-        return $source;
+        return (string)$source;
     }
 
     /**

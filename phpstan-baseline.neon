@@ -1,0 +1,664 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compile\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileAttributeExpressions\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileAuth\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileChecked\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileClassHelper\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileComments\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileConditionals\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileCsrf\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileDd\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileDisabled\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileDump\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileEndError\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileEnv\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileError\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileEscapedEchoes\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileGuest\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileJs\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileJson\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileLang\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileLoops\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileMethod\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileOld\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compilePhpBlocks\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileRawEchoes\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileReadonly\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileSelected\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileStyleHelper\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:compileUpper\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Compiler\:\:preProcessCodeExamples\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^PHPDoc tag @class has invalid value \(\(\[''btn'', ''active'' \=\> \$isActive\]\)\)\: Unexpected token "''btn''", expected TOKEN_DOUBLE_QUOTED_STRING at offset 100 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^PHPDoc tag @elseif has invalid value \(\(\.\.\.\)\)\: Unexpected token "\.\.\.", expected type at offset 183 on line 6$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^PHPDoc tag @if has invalid value \(\(\.\.\.\)\)\: Unexpected token "\.\.\.", expected type at offset 161 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^PHPDoc tag @php has invalid value \(\(\$foo \= ''bar''\)\)\: Unexpected token "\$foo", expected type at offset 183 on line 10$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^PHPDoc tag @style has invalid value \(\(\[''display\: block'', ''color\: red'' \=\> \$hasError\]\)\)\: Unexpected token "''display\: block''", expected TOKEN_DOUBLE_QUOTED_STRING at offset 83 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Parameter \#1 \$string of function trim expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 16
+			path: src/Compiler.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace_callback expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function str_replace expects array\<string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Compiler.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Contracts\\ParserInterface\:\:extractComponentParams\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Contracts/ParserInterface.php
+
+		-
+			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/MLView.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\MLView\:\:render\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/MLView.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\MLView\:\:\$compiler is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/MLView.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\MLView\:\:\$loader is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/MLView.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:extractComponentParams\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseAttributes\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseClassDirective\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseComponents\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseExtends\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseIncludes\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseParamString\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseSections\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseSlotTags\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseSlots\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:parseYields\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Parser\:\:removePropsDirectives\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^PHPDoc tag @include has invalid value \(\(''name''\)\)\: Unexpected token "''name''", expected TOKEN_DOUBLE_QUOTED_STRING at offset 99 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^PHPDoc tag @include has invalid value \(\(''name'', \[''var'' \=\> \$value\]\)\)\: Unexpected token "''name''", expected TOKEN_DOUBLE_QUOTED_STRING at offset 123 on line 6$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace_callback expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Parser.php
+
+		-
+			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Function base_path not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Renderer\:\:extractSections\(\) should return array\{string, array\<string, string\>\} but returns array\{string\|null, array\<non\-empty\-string, string\>\}\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Renderer\:\:render\(\) has parameter \$__data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Renderer\:\:renderComponent\(\) has parameter \$__data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Renderer\:\:replaceYields\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Parameter \#1 \$source of method MonkeysLegion\\Template\\Contracts\\ParserInterface\:\:extractComponentParams\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Parameter \#1 \$source of method MonkeysLegion\\Template\\Contracts\\ParserInterface\:\:removePropsDirectives\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Renderer.php
+
+		-
+			message: '#^Parameter \#1 \$source of method MonkeysLegion\\Template\\Renderer\:\:extractSections\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Parameter \#1 \$source of method MonkeysLegion\\Template\\Renderer\:\:replaceYields\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Parameter \#3 \$subject of function preg_replace_callback expects array\<float\|int\|string\>\|string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Renderer.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:__construct\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:all\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:conditional\(\) has parameter \$classes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:except\(\) has parameter \$keys with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:merge\(\) has parameter \$defaults with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:mergeClasses\(\) has parameter \$default with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:mergeClasses\(\) has parameter \$override with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:normalizeClassValue\(\) has parameter \$value with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\AttributeBag\:\:only\(\) has parameter \$keys with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\Support\\AttributeBag\:\:\$attributes type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between float\|int\|string and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Support/AttributeBag.php
+
+		-
+			message: '#^Instanceof between MonkeysLegion\\Template\\Support\\ComponentNode and MonkeysLegion\\Template\\Support\\ComponentNode will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\ComponentNode\:\:__construct\(\) has parameter \$attributes with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\ComponentNode\:\:getChildren\(\) should return list\<MonkeysLegion\\Template\\Support\\ComponentNode\|string\> but returns array\<MonkeysLegion\\Template\\Support\\ComponentNode\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\ComponentNode\:\:getNormalizedProps\(\) should return array\<string, array\{type\: ''expression''\|''string'', value\: mixed\}\> but returns array\<int\|string, array\{type\: ''expression''\|''string'', value\: mixed\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\ComponentNode\:\:toArray\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\Support\\ComponentNode\:\:\$children \(array\<MonkeysLegion\\Template\\Support\\ComponentNode\>\) does not accept array\<MonkeysLegion\\Template\\Support\\ComponentNode\|string\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between \(int\|string\) and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/Support/ComponentNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotCollection\:\:__construct\(\) has parameter \$slots with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotCollection\:\:all\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotCollection\:\:fromArray\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotCollection\:\:names\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotCollection\:\:render\(\) has parameter \$names with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '''
+				#^PHPDoc tag @if has invalid value \(\(\$slots\-\>has\('footer'\)\)     \- Check if slot exists
+				\{\{ \$slots\-\>footer \?\? 'Default' \}\} \- With fallback\)\: Unexpected token "\$slots", expected type at offset 215 on line 7$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\Support\\SlotCollection\:\:\$slots type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotCollection.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotNode\:\:__construct\(\) has parameter \$content with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotNode\:\:getContent\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotNode\:\:setContent\(\) has parameter \$content with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\Support\\SlotNode\:\:toArray\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Support/SlotNode.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:__construct\(\) has parameter \$initialData with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:createIsolatedScope\(\) has parameter \$declaredParams with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:createIsolatedScope\(\) has parameter \$passedVars with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:getCurrentScope\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:pushScope\(\) has parameter \$additionalVars with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Method MonkeysLegion\\Template\\VariableScope\:\:setGlobalData\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\VariableScope\:\:\$globalData type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Property MonkeysLegion\\Template\\VariableScope\:\:\$scopeStack type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/VariableScope.php
+
+		-
+			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertTrue\(\) with true will always evaluate to true\.$#'
+			identifier: method.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/RendererTest.php
+
+		-
+			message: '#^Access to an undefined property MonkeysLegion\\Template\\Support\\SlotCollection\:\:\$header\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Unit/Support/SlotCollectionTest.php
+
+		-
+			message: '#^Access to an undefined property MonkeysLegion\\Template\\Support\\SlotCollection\:\:\$missing\.$#'
+			identifier: property.notFound
+			count: 1
+			path: tests/Unit/Support/SlotCollectionTest.php

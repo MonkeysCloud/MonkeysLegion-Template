@@ -9,13 +9,15 @@ namespace MonkeysLegion\Template\Support;
  */
 class ComponentNode
 {
-    /** @var self[] Children inside the component */
+    /** @var array<int, self|string> Children inside the component */
     private array $children = [];
 
     public function __construct(
         public readonly string $name,           // component name, without <x- > prefix
-        public readonly array  $attributes = [] // key => value pairs as parsed from tag
-    ) {}
+        /** @var array<string, mixed> */
+        public readonly array $attributes = [] // key => value pairs as parsed from tag
+    ) {
+    }
 
     /**
      * Append a child node (raw string / ComponentNode / SlotNode).
@@ -26,7 +28,7 @@ class ComponentNode
     }
 
     /**
-     * @return list<self|string>
+     * @return array<int, self|string>
      */
     public function getChildren(): array
     {
@@ -35,6 +37,8 @@ class ComponentNode
 
     /**
      * Recursively export the node tree to array (useful for debugging).
+     *
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
@@ -63,10 +67,6 @@ class ComponentNode
         $props = [];
 
         foreach ($this->attributes as $rawName => $rawValue) {
-            if ($rawName === null || $rawName === '') {
-                continue;
-            }
-
             // Dynamic prop: :foo="expression"
             if ($rawName[0] === ':') {
                 $name = substr($rawName, 1); // ':tags' → 'tags'

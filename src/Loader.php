@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template;
 
+use MonkeysLegion\Template\Contracts\LoaderInterface;
 use RuntimeException;
 
 /**
  * Responsible for locating raw template files and compiled cache files by name.
  */
-class Loader
+class Loader implements LoaderInterface
 {
     private string $sourcePath;
     private string $cachePath;
