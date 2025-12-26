@@ -234,7 +234,7 @@ class Compiler implements CompilerInterface
     private function compileChecked(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@checked\((.+?)\)/',
+            '/@checked\(((?>[^()]+|(?R))*)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'checked' : '' ?>",
             $php
         );
@@ -247,7 +247,7 @@ class Compiler implements CompilerInterface
     private function compileSelected(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@selected\((.+?)\)/',
+            '/@selected\(((?>[^()]+|(?R))*)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'selected' : '' ?>",
             $php
         );
@@ -260,7 +260,7 @@ class Compiler implements CompilerInterface
     private function compileDisabled(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@disabled\((.+?)\)/',
+            '/@disabled\(((?>[^()]+|(?R))*)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'disabled' : '' ?>",
             $php
         );
@@ -273,7 +273,7 @@ class Compiler implements CompilerInterface
     private function compileReadonly(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@readonly\((.+?)\)/',
+            '/@readonly\(((?>[^()]+|(?R))*)\)/',
             fn(array $m) => "<?= ({$m[1]}) ? 'readonly' : '' ?>",
             $php
         );
