@@ -9,9 +9,13 @@ namespace MonkeysLegion\Template\Support;
  */
 class SlotNode
 {
-    /** @var string|string[] Nested content or nested nodes */
+    /** @var string|array<int, string> Nested content or nested nodes */
     private array|string $content;
 
+    /**
+     * @param string $name
+     * @param array<int, string>|string $content
+     */
     public function __construct(
         public readonly string $name,
         array|string $content
@@ -20,7 +24,7 @@ class SlotNode
     }
 
     /**
-     * @return array|string
+     * @return array<int, string>|string
      */
     public function getContent(): array|string
     {
@@ -29,6 +33,8 @@ class SlotNode
 
     /**
      * Replace the content (used by parser transforms).
+     *
+     * @param array<int, string>|string $content
      */
     public function setContent(array|string $content): void
     {
@@ -37,6 +43,8 @@ class SlotNode
 
     /**
      * Export to associative array for debug.
+     *
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {

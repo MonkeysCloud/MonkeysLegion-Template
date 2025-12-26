@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template;
 
+use MonkeysLegion\Template\Contracts\ParserInterface;
 use MonkeysLegion\Template\Support\AttributeBag;
 use MonkeysLegion\Template\Support\SlotCollection;
 
@@ -18,7 +19,7 @@ use MonkeysLegion\Template\Support\SlotCollection;
  * - Component namespacing (ui.button -> ui/button)
  * - Better error messages
  */
-class Parser
+class Parser implements ParserInterface
 {
     /**
      * Parse components and slots in the template source.
@@ -55,7 +56,7 @@ class Parser
             $source = $this->parseComponents($source);
         }
 
-        return $source;
+        return (string)$source;
     }
 
     /**
@@ -65,7 +66,7 @@ class Parser
      */
     private function parseClassDirective(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/:class\s*=\s*"([^"]+)"/s',
             function (array $m) {
                 $expression = $m[1];
@@ -84,7 +85,7 @@ class Parser
      * Supports both @props and @param syntax for backward compatibility
      *
      * @param string $source Component source code
-     * @return array Parameter declarations with default values
+     * @return array<string, mixed> Parameter declarations with default values
      */
     public function extractComponentParams(string $source): array
     {
@@ -94,9 +95,8 @@ class Parser
         if (preg_match('/@props\s*\(\s*\[\s*(.*?)\s*\]\s*\)/s', $source, $match)) {
             $paramString = $match[1];
             $params = $this->parseParamString($paramString);
-        }
-        // Fall back to old @param syntax for backward compatibility
-        elseif (preg_match('/@param\s*\(\s*\[\s*(.*?)\s*\]\s*\)/s', $source, $match)) {
+        } elseif (preg_match('/@param\s*\(\s*\[\s*(.*?)\s*\]\s*\)/s', $source, $match)) {
+            // Fall back to old @param syntax for backward compatibility
             $paramString = $match[1];
             $params = $this->parseParamString($paramString);
         }
@@ -106,6 +106,9 @@ class Parser
 
     /**
      * Parse parameter string into key-value array
+     *
+     * @param string $paramString
+     * @return array<string, mixed>
      */
     private function parseParamString(string $paramString): array
     {
@@ -148,12 +151,20 @@ class Parser
         }
 
         // Handle booleans
-        if ($value === 'true') return true;
-        if ($value === 'false') return false;
-        if ($value === 'null') return null;
+        if ($value === 'true') {
+            return true;
+        }
+        if ($value === 'false') {
+            return false;
+        }
+        if ($value === 'null') {
+            return null;
+        }
 
         // Handle empty arrays
-        if ($value === '[]') return [];
+        if ($value === '[]') {
+            return [];
+        }
 
         // Handle numbers
         if (is_numeric($value)) {
@@ -173,50 +184,20 @@ class Parser
      * Parse @include directives to include templates.
      *
      * Supports:
-     * @include('name')
-     * @include('name', ['var' => $value])
+     * `@include('name')`
+     * `@include('name', ['var' => $value])`
      */
     private function parseIncludes(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@include\(\s*["\']([^"\']+)["\']\s*(?:,\s*(\[[^\]]+\]))?\s*\)/',
             function (array $m) {
                 $viewName = $m[1];
                 $data = $m[2] ?? '[]';
 
-                // Convert dot notation to path
-                $viewPath = str_replace('.', '/', $viewName);
-
-                return "<?php\n" .
-                    "// Include template: {$viewName}\n" .
-                    "\$__data_include = {$data};\n" .
-                    "\$__include_path = base_path('resources/views/{$viewPath}.ml.php');\n" .
-                    "if (is_file(\$__include_path)) {\n" .
-                    "    \$__ml_scope = \\MonkeysLegion\\Template\\VariableScope::getCurrent();\n" .
-                    "    \$__include_source = file_get_contents(\$__include_path);\n" .
-                    "    \$__include_parser = new \\MonkeysLegion\\Template\\Parser();\n" .
-                    "    \$__include_params = \$__include_parser->extractComponentParams(\$__include_source);\n" .
-                    "    \$__ml_scope->createIsolatedScope(\$__data_include, \$__include_params);\n" .
-                    "    \n" .
-                    "    try {\n" .
-                    "        \$__include_parsed = \$__include_parser->parse(\$__include_source);\n" .
-                    "        \$__include_compiler = new \\MonkeysLegion\\Template\\Compiler(\$__include_parser);\n" .
-                    "        \$__include_compiled = \$__include_compiler->compile(\$__include_parsed, \$__include_path);\n" .
-                    "        \$__include_compiled = substr(\$__include_compiled, strpos(\$__include_compiled, '?>') + 2);\n" .
-                    "        \n" .
-                    "        \$__isolated_data = \$__ml_scope->getCurrentScope();\n" .
-                    "        extract(\$__isolated_data);\n" .
-                    "        \n" .
-                    "        eval('?>' . \$__include_compiled);\n" .
-                    "    } catch (\\Throwable \$__include_error) {\n" .
-                    "        throw new \\RuntimeException('Error in @include(\"{$viewName}\"): ' . \$__include_error->getMessage(), 0, \$__include_error);\n" .
-                    "    } finally {\n" .
-                    "        \$__ml_scope->popScope();\n" .
-                    "    }\n" .
-                    "} else {\n" .
-                    "    throw new \\RuntimeException('Include not found: {$viewName} at {$viewPath}.ml.php');\n" .
-                    "}\n" .
-                    "?>";
+                // Use $this->render() to handle includes via the Renderer.
+                // We merge the current scope data with the specific include data to support variable inheritance.
+                return "<?php echo \$this->render('{$viewName}', array_merge(\\MonkeysLegion\\Template\\VariableScope::getCurrent()->getCurrentScope(), {$data})); ?>";
             },
             $source
         );
@@ -229,7 +210,7 @@ class Parser
     private function parseComponents(string $source): string
     {
         // First handle self-closing components
-        $source = preg_replace_callback(
+        $source = (string)preg_replace_callback(
             '/<x-(?!slot:)([a-zA-Z0-9_:.-]+)([^>]*)\s*\/\s*>/',
             function (array $m) {
                 return $this->buildComponentCode($m[1], $m[2], '', true);
@@ -238,7 +219,7 @@ class Parser
         );
 
         // Then handle components with content
-        $source = preg_replace_callback(
+        $source = (string)preg_replace_callback(
             '/<x-([a-zA-Z0-9_:.-]+)([^>]*)>(.*?)<\/x-\1>/s',
             function (array $m) {
                 return $this->buildComponentCode($m[1], $m[2], $m[3], false);
@@ -264,7 +245,7 @@ class Parser
         // Normalize colon-prefixed keys again just in case
         $normalized = [];
         foreach ($attrs as $k => $v) {
-            if (is_string($k) && $k !== '' && $k[0] === ':') {
+            if ($k !== '' && $k[0] === ':') {
                 $name = substr($k, 1);
 
                 // If the value is a quoted string (from var_export), strip quotes
@@ -306,61 +287,27 @@ class Parser
                 "\$__component_content = ob_get_clean();\n"
             ) .
             "\n" .
+            "\n" .
             "// Locate component file\n" .
-            "\$__component_found = false;\n" .
-            "foreach(['components', 'layouts', 'partials'] as \$__ml_dir) {\n" .
-            "    \$__ml_path = base_path('resources/views/'.\$__ml_dir.'/{$componentPath}.ml.php');\n" .
-            "    if (is_file(\$__ml_path)) {\n" .
-            "        \$__component_found = true;\n" .
-            "        try {\n" .
-            "            // Load component source\n" .
-            "            \$__component_source = file_get_contents(\$__ml_path);\n" .
-            "            \$__parser = new \\MonkeysLegion\\Template\\Parser();\n" .
-            "            \$__component_params = \$__parser->extractComponentParams(\$__component_source);\n" .
-            "            \n" .
-            "            // Create isolated scope\n" .
-            "            \$__ml_scope = \\MonkeysLegion\\Template\\VariableScope::getCurrent();\n" .
-            "            \$__ml_scope->createIsolatedScope(\$__component_attrs, \$__component_params);\n" .
-            "            \n" .
-            "            // Create AttributeBag for remaining attributes\n" .
-            "            \$attrs = new \\MonkeysLegion\\Template\\Support\\AttributeBag(\$__component_attrs);\n" .
-            "            \n" .
-            "            // Create SlotCollection\n" .
-            "            \$slots = \\MonkeysLegion\\Template\\Support\\SlotCollection::fromArray(\n" .
-            "                array_merge(\$__component_slots, ['__default' => \$__component_content])\n" .
-            "            );\n" .
-            "            \$slot = \$slots->getDefault();\n" .
-            "            \n" .
-            "            // OPTIONAL: strip @props/@param from component source\n" .
-            "            \$__component_source = \$__parser->removePropsDirectives(\$__component_source);\n" .
-            "            \n" .
-            "            // IMPORTANT: pass RAW source to Compiler; it will call Parser internally\n" .
-            "            \$__compiler = new \\MonkeysLegion\\Template\\Compiler(\$__parser);\n" .
-            "            \$__compiled = \$__compiler->compile(\$__component_source, \$__ml_path);\n" .
-            "            \n" .
-            "            // Extract variables\n" .
-            "            \$__isolated_data = \$__ml_scope->getCurrentScope();\n" .
-            "            extract(\$__isolated_data);\n" .
-            "            \n" .
-            "            // Execute component\n" .
-            "            eval('?>' . \$__compiled);\n" .
-            "        } catch (\\Throwable \$__component_error) {\n" .
-            "            throw new \\RuntimeException(\n" .
-            "                'Error in component <x-{$name}>: ' . \$__component_error->getMessage() . \n" .
-            "                ' (File: ' . \$__ml_path . ')',\n" .
-            "                0,\n" .
-            "                \$__component_error\n" .
-            "            );\n" .
-            "        } finally {\n" .
-            "            \$__ml_scope->popScope();\n" .
-            "        }\n" .
-            "        break;\n" .
-            "    }\n" .
-            "}\n" .
-            "if (!\$__component_found) {\n" .
+            "try {\n" .
+            "    // Delegate lookup to the Renderer (via \$this context)\n" .
+            "    \$__ml_path = \$this->resolveComponent('{$name}');\n" .
+            "    \n" .
+            "    // Prepare data for renderComponent\n" .
+            "    // We merge attributes and inject the SlotCollection\n" .
+            "    \$__component_data = {$attrsCode};\n" .
+            "    \$__component_data['slots'] = \\MonkeysLegion\\Template\\Support\\SlotCollection::fromArray(\n" .
+            "        array_merge(\$__component_slots, ['__default' => \$__component_content])\n" .
+            "    );\n" .
+            "    \n" .
+            "    // Render directly (no eval!)\n" .
+            "    echo \$this->renderComponent(\$__ml_path, \$__component_data);\n" .
+            "    \n" .
+            "} catch (\\Throwable \$__component_error) {\n" .
             "    throw new \\RuntimeException(\n" .
-            "        'Component not found: <x-{$name}> (searched: components/{$componentPath}.ml.php, ' .\n" .
-            "        'layouts/{$componentPath}.ml.php, partials/{$componentPath}.ml.php)'\n" .
+            "        'Error in component <x-{$name}>: ' . \$__component_error->getMessage(),\n" .
+            "        0,\n" .
+            "        \$__component_error\n" .
             "    );\n" .
             "}\n" .
             "?>\n";
@@ -369,18 +316,22 @@ class Parser
     /**
      * Parse HTML attributes from string into array
      * Handles both static and dynamic attributes
+     *
+     * @return array<string, mixed>
      */
     private function parseAttributes(string $attrStr): array
     {
         $attrs = [];
 
         // 1) key="value" pairs (including colon-bound like :tags="[...]")
-        if (preg_match_all(
-            '/([:@a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/s',
-            $attrStr,
-            $matches,
-            PREG_SET_ORDER
-        )) {
+        if (
+            preg_match_all(
+                '/([:@a-zA-Z0-9_:-]+)\s*=\s*"([^"]*)"/s',
+                $attrStr,
+                $matches,
+                PREG_SET_ORDER
+            )
+        ) {
             foreach ($matches as $set) {
                 $key = $set[1];
                 $raw = $set[2];
@@ -438,7 +389,7 @@ class Parser
      */
     private function parseSlots(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@slot\(["\']([^"\']+)["\']\)(.*?)@endslot/s',
             function (array $m) {
                 $slot = $m[1];
@@ -464,7 +415,7 @@ class Parser
      */
     private function parseSlotTags(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/<x-slot:([a-zA-Z0-9_-]+)([^>]*)>(.*?)<\/x-slot:\1>/s',
             function (array $m) {
                 $slot = $m[1];
@@ -492,7 +443,7 @@ class Parser
      */
     private function parseExtends(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@extends\(["\']([^"\']+)["\']\)/',
             function (array $m) {
                 $layout = $m[1];
@@ -508,7 +459,7 @@ class Parser
      */
     private function parseSections(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@section\(["\']([^"\']+)["\']\)(.*?)@endsection/s',
             function (array $m) {
                 $name = $m[1];
@@ -526,7 +477,7 @@ class Parser
      */
     private function parseYields(string $source): string
     {
-        return preg_replace_callback(
+        return (string)preg_replace_callback(
             '/@yield\(["\']([^"\']+)["\']\)/',
             function (array $m) {
                 $name = $m[1];
@@ -545,8 +496,40 @@ class Parser
     public function removePropsDirectives(string $source): string
     {
         // Remove both @props and @param directives
-        $source = preg_replace('/@props\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
-        $source = preg_replace('/@param\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
+        $source = (string)preg_replace('/@props\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
+        $source = (string)preg_replace('/@param\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
         return $source;
+    }
+    /**
+     * Extract dependencies (components, includes, layouts) from the source.
+     * Useful for static analysis / linting.
+     *
+     * @param string $source
+     * @return array{components: string[], includes: string[], layouts: string[]}
+     */
+    public function getDependencies(string $source): array
+    {
+        $dependencies = [
+            'components' => [],
+            'includes' => [],
+            'layouts' => [],
+        ];
+
+        // 1. Components <x-name ...>
+        if (preg_match_all('/<x-([a-zA-Z0-9_:.-]+)/', $source, $matches)) {
+            $dependencies['components'] = array_unique($matches[1]);
+        }
+
+        // 2. Includes @include('name')
+        if (preg_match_all('/@include\(\s*[\'"]([^\'"]+)[\'"]/', $source, $matches)) {
+            $dependencies['includes'] = array_unique($matches[1]);
+        }
+
+        // 3. Layouts @extends('name')
+        if (preg_match_all('/@extends\(\s*[\'"]([^\'"]+)[\'"]\)/', $source, $matches)) {
+            $dependencies['layouts'] = array_unique($matches[1]);
+        }
+
+        return $dependencies;
     }
 }

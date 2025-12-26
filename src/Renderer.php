@@ -4,62 +4,58 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template;
 
+use MonkeysLegion\Template\Exceptions\ViewException;
 use RuntimeException;
 use Throwable;
 
-/**
- * Renders MLView templates (parses, compiles, caches, and executes)
- * with support for layout inheritance via @extends, @section, and @yield.
- */
 final class Renderer
 {
-    private Parser   $parser;
-    private Compiler $compiler;
-    private Loader   $loader;
-    private bool     $cacheEnabled;
-    private string   $cacheDir;
-
+    private \MonkeysLegion\Template\Contracts\ParserInterface $parser;
+    private \MonkeysLegion\Template\Contracts\CompilerInterface $compiler;
+    private \MonkeysLegion\Template\Contracts\LoaderInterface $loader;
+    private bool $cacheEnabled;
+    private string $cacheDir;
+    private array $pushStacks = [];
+    private array $prependStacks = [];
+    private array $onceHashes = [];
+    private array $stackPlaceholders = [];
+    private array $loopStack = [];
     public function __construct(
-        Parser   $parser,
-        Compiler $compiler,
-        Loader   $loader,
-        bool     $cacheEnabled = true,
-        string   $cacheDir     = ''
+        \MonkeysLegion\Template\Contracts\ParserInterface $parser,
+        \MonkeysLegion\Template\Contracts\CompilerInterface $compiler,
+        \MonkeysLegion\Template\Contracts\LoaderInterface $loader,
+        bool $cacheEnabled = true,
+        string $cacheDir = '',
+        private ?\MonkeysLegion\Template\Support\DirectiveRegistry $registry = null
     ) {
         $this->parser       = $parser;
         $this->compiler     = $compiler;
         $this->loader       = $loader;
         $this->cacheEnabled = $cacheEnabled;
+        $this->registry     = $registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
         $this->cacheDir     = $cacheDir !== ''
             ? rtrim($cacheDir, DIRECTORY_SEPARATOR)
-            : base_path('var/cache/views');
+            : (function_exists('base_path') ?
+                call_user_func('base_path', 'var/cache/views') : sys_get_temp_dir() . '/monkeyslegion/views');
     }
 
-    /**
-     * Render a named template with given data.
-     * Handles @extends, @section, and @yield.
-     *
-     * @param string $name Template key (e.g., 'home')
-     * @param array  $data Variables to extract into template scope
-     * @return string Rendered HTML output
-     * @throws RuntimeException when source is missing
-     */
-    public function render(string $name, array $data = []): string
+    public function render(string $__name, array $__data = []): string
     {
         try {
-            // Initialize the variable scope system with global data
-            $scope = new VariableScope($data);
+            $scope = new VariableScope($__data);
             VariableScope::setCurrent($scope);
 
-            $sourcePath = $this->loader->getSourcePath($name);
-            if (!is_file($sourcePath)) {
-                throw new RuntimeException("Template source not found: {$sourcePath}");
+            $__sourcePath = $this->loader->getSourcePath($__name);
+            if (!is_file($__sourcePath)) {
+                throw new RuntimeException("Template source not found: {$__sourcePath}");
             }
 
-            $raw = file_get_contents($sourcePath);
+            $__raw = file_get_contents($__sourcePath);
+            if ($__raw === false) {
+                 throw new RuntimeException("Failed to read template source: {$__sourcePath}");
+            }
 
-            // Layout handling: extract sections from child and inject into parent
-            [$raw, $sections] = $this->extractSections($raw);
+            [$__raw, $sections] = $this->extractSections($__raw);
 
             if (isset($sections['__extends'])) {
                 $parentName = $sections['__extends'];
@@ -70,12 +66,14 @@ final class Renderer
                 }
 
                 $parentRaw = file_get_contents($parentPath);
+                if ($parentRaw === false) {
+                    throw new RuntimeException("Failed to read parent template: {$parentPath}");
+                }
 
-                $raw = $this->replaceYields($parentRaw, $sections);
+                $__raw = $this->replaceYields($parentRaw, $sections);
             }
 
-            // Compile and render, using cache if enabled
-            $compiledPath = $this->getCompiledPath($name);
+            $__compiledPath = $this->getCompiledPath($__name, $__sourcePath);
 
             if ($this->cacheEnabled) {
                 if (!is_dir($this->cacheDir)) {
@@ -83,284 +81,342 @@ final class Renderer
                 }
 
                 if (
-                    !is_file($compiledPath)
-                    || filemtime($sourcePath) > filemtime($compiledPath)
+                    !is_file($__compiledPath)
+                    || filemtime($__sourcePath) > filemtime($__compiledPath)
                 ) {
-                    // IMPORTANT: pass RAW source to Compiler.
-                    // Compiler::compile() will call Parser internally.
-                    $php = $this->compiler->compile($raw, $sourcePath);
-                    file_put_contents($compiledPath, $php);
+                    $php = $this->compiler->compile($__raw, $__sourcePath);
+                    file_put_contents($__compiledPath, $php);
                 }
 
-                // ==== Buffered include with level tracking (cache enabled) ====
                 $level = ob_get_level();
                 ob_start();
 
                 try {
-                    // Make data available globally for slots
                     $GLOBALS['__data']     = $scope->getCurrentScope();
                     $GLOBALS['__ml_attrs'] = [];
-
-                    // Extract data for template
                     extract($scope->getCurrentScope(), EXTR_SKIP);
-
-                    // Ensure $slots is always defined (for layouts using @if($slots->has(...)))
                     if (!isset($slots)) {
                         $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
                     }
 
-                    // Include compiled template inside this output buffer
-                    include $compiledPath;
+                    include $__compiledPath;
+                    $__templateOutput = ob_get_clean();
 
-                    // Get the buffered output from the included template
-                    $templateOutput = ob_get_clean();
-
-                    if ($templateOutput === false) {
+                    if ($__templateOutput === false) {
                         throw new RuntimeException(sprintf(
-                            'Renderer buffer was closed while rendering view [%s]. ' .
-                            'Check for ob_end_clean()/ob_clean() in your views or components.',
-                            $name
+                            'Renderer buffer was closed while rendering view [%s].',
+                            $__name
                         ));
                     }
 
-                    return $templateOutput;
+                    return $this->replaceStackPlaceholders($__templateOutput);
                 } catch (Throwable $e) {
-                    // Clean only buffers we started
-                    while (ob_get_level() > $level) {
-                        ob_end_clean();
-                    }
-
-                    // Enhanced error message with variable context
-                    $errorMsg = "Error rendering template: " . $e->getMessage();
-                    if (str_contains($e->getMessage(), 'headers already sent')) {
-                        $errorMsg .= " (Check for whitespace or output before PHP tags in components)";
-                    }
-
-                    throw new RuntimeException($errorMsg, 0, $e);
+                    $this->handleViewException($e, $level);
+                    throw $e;
                 } finally {
                     unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
                 }
             }
 
-            // ==========================
-            // No cache: compile and include on the fly (NO eval)
-            // ==========================
-            // IMPORTANT: pass RAW source to Compiler.
-            // Compiler::compile() will call Parser internally.
-            $php = $this->compiler->compile($raw, $sourcePath);
-
-            // Ensure cache directory exists (we still need a temp file to include)
+            $php = $this->compiler->compile($__raw, $__sourcePath);
             if (!is_dir($this->cacheDir)) {
                 mkdir($this->cacheDir, 0755, true);
             }
-
-            // Reuse the same compiled path even when cache is disabled
-            $tmpCompiledPath = $compiledPath;
+            $tmpCompiledPath = $__compiledPath;
             file_put_contents($tmpCompiledPath, $php);
 
-            // ==== Buffered include with level tracking (no cache) ====
             $level = ob_get_level();
             ob_start();
 
             try {
-                // Make data available globally for slots
                 $GLOBALS['__data']     = $scope->getCurrentScope();
                 $GLOBALS['__ml_attrs'] = [];
-
-                // Extract data for the template
                 extract($scope->getCurrentScope(), EXTR_SKIP);
-
-                // Ensure $slots is always defined (for layouts using slot-based regions)
                 if (!isset($slots)) {
                     $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
                 }
 
-                // Include compiled template inside the current output buffer
                 include $tmpCompiledPath;
+                $__templateOutput = ob_get_clean();
 
-                // Get the buffered output
-                $templateOutput = ob_get_clean();
-
-                if ($templateOutput === false) {
+                if ($__templateOutput === false) {
                     throw new RuntimeException(sprintf(
-                        'Renderer buffer was closed while rendering view [%s] (no-cache). ' .
-                        'Check for ob_end_clean()/ob_clean() in your views or components.',
-                        $name
+                        'Renderer buffer was closed while rendering view [%s] (no-cache).',
+                        $__name
                     ));
                 }
 
-                return $templateOutput;
+                return $this->replaceStackPlaceholders($__templateOutput);
             } catch (Throwable $e) {
-                // Clean only buffers we started
-                while (ob_get_level() > $level) {
-                    ob_end_clean();
-                }
-
-                throw new RuntimeException(
-                    "Error rendering template (no-cache): "
-                    . $e->getMessage()
-                    . " in " . $e->getFile()
-                    . ":" . $e->getLine(),
-                    0,
-                    $e
-                );
+                $this->handleViewException($e, $level);
+                throw $e;
             } finally {
                 unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-                // Since caching is disabled, we can optionally remove the temp compiled file
                 @unlink($tmpCompiledPath);
             }
         } catch (Throwable $e) {
-            // Do NOT nuke all buffers globally; just make sure we don't leak ours.
-            // (If you really want to, you can restore to a known level here,
-            //  but at this point we've already cleaned in the inner blocks.)
-
             unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-
             throw $e;
         }
     }
-    /**
-     * Render a component file directly.
-     * This is called when a component is included during rendering.
-     *
-     * @param string $path Component file path
-     * @param array $data Component data and slots
-     * @return string Rendered component
-     */
-    public function renderComponent(string $path, array $data = []): string
+    public function resolveComponent(string $name): string
     {
-        // Track current buffer level so we only clean what we started
+        $name = str_replace('/', '.', $name);
+        $prefixes = ['components', 'layouts', 'partials'];
+
+        foreach ($prefixes as $prefix) {
+            try {
+                return $this->loader->getSourcePath($prefix . '.' . $name);
+            } catch (RuntimeException) {}
+        }
+
+        throw new RuntimeException("Component not found: <x-{$name}>");
+    }
+
+    public function renderComponent(string $__path, array $__data = []): string
+    {
         $level = ob_get_level();
         ob_start();
 
         try {
-            $source = file_get_contents($path);
-            // PASS RAW SOURCE to Compiler; it will call Parser internally
-            $compiled = $this->compiler->compile($source, $path);
-
-            // Ensure cache dir exists for temp component file
-            if (!is_dir($this->cacheDir)) {
-                mkdir($this->cacheDir, 0755, true);
+            if (!is_file($__path)) {
+                throw new RuntimeException("Component file not found: {$__path}");
             }
 
-            $tmpPath = $this->cacheDir . DIRECTORY_SEPARATOR . 'cmp_' . md5($path . microtime(true)) . '.php';
-            file_put_contents($tmpPath, $compiled);
+            $__source = file_get_contents($__path);
+            if ($__source === false) {
+                 throw new RuntimeException("Failed to read component source: {$__path}");
+            }
 
-            // Make component data available
-            extract($data, EXTR_SKIP);
+            $props = $this->parser->extractComponentParams($__source);
+            $scope = VariableScope::getCurrent();
+            $slots = $__data['slots'] ?? new \MonkeysLegion\Template\Support\SlotCollection([]);
+            $passedAttrs = $__data;
+            unset($passedAttrs['slots']);
 
-            // Execute compiled component template
-            include $tmpPath;
+            $scope->createIsolatedScope($passedAttrs, $props);
+            $__compiledPath = $this->getCompiledPathForComponent($__path);
 
-            // Capture output
+            if ($this->cacheEnabled) {
+                if (!is_dir($this->cacheDir)) {
+                    mkdir($this->cacheDir, 0755, true);
+                }
+                if (!is_file($__compiledPath) || filemtime($__path) > filemtime($__compiledPath)) {
+                    $cleanSource = $this->parser->removePropsDirectives($__source);
+                    $php = $this->compiler->compile($cleanSource, $__path);
+                    file_put_contents($__compiledPath, $php);
+                }
+            } else {
+                if (!is_dir($this->cacheDir)) {
+                    mkdir($this->cacheDir, 0755, true);
+                }
+                $cleanSource = $this->parser->removePropsDirectives($__source);
+                $php = $this->compiler->compile($cleanSource, $__path);
+                file_put_contents($__compiledPath, $php);
+            }
+
+            $scopedData = $scope->getCurrentScope();
+            $scopedData['slots'] = $slots;
+            $scopedData['slot']  = $slots->getDefault();
+
+            extract($scopedData, EXTR_SKIP);
+            include $__compiledPath;
+
             $output = ob_get_clean();
-
             if ($output === false) {
-                throw new RuntimeException(
-                    "Component buffer was closed while rendering {$path}. " .
-                    "Check for ob_end_clean()/ob_clean() calls inside the component."
-                );
+                 throw new RuntimeException("Component buffer closed unexpectedly: {$__path}");
             }
-
             return $output;
-        } catch (\Throwable $e) {
-            // Restore buffers only down to the level we started
-            while (ob_get_level() > $level) {
-                ob_end_clean();
-            }
-
-            throw new RuntimeException(
-                "Error rendering component {$path}: " . $e->getMessage(),
-                0,
-                $e
-            );
+        } catch (Throwable $e) {
+            $this->handleViewException($e, $level);
+            throw $e;
         } finally {
-            if (isset($tmpPath) && is_file($tmpPath)) {
-                @unlink($tmpPath);
+            if (isset($scope)) {
+                $scope->popScope();
             }
         }
     }
 
-    /**
-     * Clear cached compiled templates.
-     */
+    private function getCompiledPathForComponent(string $path): string
+    {
+        return $this->cacheDir . DIRECTORY_SEPARATOR . 'cmp_' . md5($path) . '.php';
+    }
+
     public function clearCache(): void
     {
         if (!is_dir($this->cacheDir)) {
             return;
         }
-        foreach (glob($this->cacheDir . '/*.php') as $file) {
+        $files = glob($this->cacheDir . '/*.php');
+        if ($files === false) {
+            return;
+        }
+        foreach ($files as $file) {
             @unlink($file);
         }
     }
 
-    /**
-     * Convert template name to compiled file path.
-     */
-    private function getCompiledPath(string $name): string
+    private function getCompiledPath(string $name, string $sourcePath): string
     {
-        $file = str_replace(['.', '/'], '_', $name) . '.php';
+        $file = str_replace(['.', '/'], '_', $name) . '_' . md5($sourcePath) . '.php';
         return $this->cacheDir . DIRECTORY_SEPARATOR . $file;
     }
 
-    /**
-     * Extract @extends and all @section blocks.
-     * Returns [modifiedSource, sectionsMap]
-     *
-     * @param string $source
-     * @return array{0:string,1:array<string,string>}
-     */
     private function extractSections(string $source): array
     {
         $sections = [];
-
-        // Match @extends('base') or @extends("base")
-        if (preg_match(
-            '/@extends\((?:\'|")(?<view>.+?)(?:\'|")\)/',
-            $source,
-            $m
-        )) {
+        if (preg_match('/@extends\((?:\'|")(?<view>.+?)(?:\'|")\)/', $source, $m)) {
             $sections['__extends'] = $m['view'];
-            // Remove only the first occurrence
-            $source = preg_replace(
-                '/@extends\((?:\'|").+?(?:\'|")\)/',
-                '',
-                $source,
-                1
-            );
+            $source = (string)preg_replace('/@extends\((?:\'|").+?(?:\'|")\)/', '', $source, 1);
         }
-
-        // Match all @section('name') ... @endsection blocks
         $sectionPattern = '/@section\((?:\'|")(?<name>.+?)(?:\'|")\)(?<content>.*?)@endsection/s';
-        $source = preg_replace_callback(
-            $sectionPattern,
-            function (array $m) use (&$sections) {
-                $sections[$m['name']] = $m['content'];
-                return '';
-            },
-            $source
-        );
-
-        return [$source, $sections];
+        $source = (string)preg_replace_callback($sectionPattern, function (array $m) use (&$sections) {
+            $sections[$m['name']] = $m['content'];
+            return '';
+        }, $source);
+        return [(string)$source, $sections];
     }
 
-    /**
-     * Replace @yield('name') in the parent source with the corresponding section content.
-     *
-     * @param string               $source
-     * @param array<string,string> $sections
-     * @return string
-     */
     private function replaceYields(string $source, array $sections): string
     {
         $pattern = '/@yield\((?:\'|")(?<section>.+?)(?:\'|")\)/';
-        return preg_replace_callback(
-            $pattern,
-            function (array $m) use ($sections) {
-                $sectionName = $m['section'];
-                return $sections[$sectionName] ?? '';
-            },
-            $source
+        return (string)preg_replace_callback($pattern, function (array $m) use ($sections) {
+            $sectionName = $m['section'];
+            return $sections[$sectionName] ?? '';
+        }, $source);
+    }
+    public function startPush(string $section): void {
+        ob_start();
+        $this->pushStacks[$section][] = '__PUSH_START__';
+    }
+    public function stopPush(): void {
+        $content = ob_get_clean();
+        if ($content === false) return;
+        foreach ($this->pushStacks as $name => &$stack) {
+            if (!empty($stack) && end($stack) === '__PUSH_START__') {
+                array_pop($stack);
+                $stack[] = $content;
+                return;
+            }
+        }
+    }
+    public function startPrepend(string $section): void {
+        ob_start();
+        $this->prependStacks[$section][] = '__PREPEND_START__';
+    }
+    public function stopPrepend(): void {
+        $content = ob_get_clean();
+        if ($content === false) return;
+        foreach ($this->prependStacks as $name => &$stack) {
+            if (!empty($stack) && end($stack) === '__PREPEND_START__') {
+                array_pop($stack);
+                $stack[] = $content;
+                return;
+            }
+        }
+    }
+    public function yieldPush(string $section, string $default = ''): string {
+        $placeholder = "<!-- __ML_STACK_{$section}__ -->";
+        $this->stackPlaceholders[$placeholder] = $section;
+        return $placeholder;
+    }
+    private function replaceStackPlaceholders(string $content): string {
+        foreach ($this->stackPlaceholders as $placeholder => $section) {
+            $prepends = $this->prependStacks[$section] ?? [];
+            $pushes = $this->pushStacks[$section] ?? [];
+            $output = '';
+            foreach (array_reverse($prepends) as $item) $output .= $item;
+            foreach ($pushes as $item) $output .= $item;
+            $content = str_replace($placeholder, $output, $content);
+        }
+        return $content;
+    }
+    public function addOnceHash(string $hash): bool {
+        if (isset($this->onceHashes[$hash])) return false;
+        $this->onceHashes[$hash] = true;
+        return true;
+    }
+    public function addLoop(mixed $data): void {
+        $parent = end($this->loopStack) ?: null;
+        $this->loopStack[] = \MonkeysLegion\Template\Support\Loop::start($data, $parent);
+    }
+    public function popLoop(): void {
+        array_pop($this->loopStack);
+    }
+    public function getLastLoop(): ?\MonkeysLegion\Template\Support\Loop {
+        return end($this->loopStack) ?: null;
+    }
+
+    /**
+     * @return never
+     */
+    private function handleViewException(Throwable $e, int $level): void
+    {
+        while (ob_get_level() > $level) {
+            ob_end_clean();
+        }
+
+        if ($e instanceof \MonkeysLegion\Template\Exceptions\ViewException) {
+            throw $e;
+        }
+
+        $exceptionFile = $e->getFile();
+        $exceptionLine = $e->getLine();
+
+        if (is_file($exceptionFile)) {
+            $handle = fopen($exceptionFile, 'r');
+            if ($handle) {
+                $header = fread($handle, 512);
+                fclose($handle);
+
+                // Safe construction
+                $pathStartMarker = '/' . '**PATH ';
+                $pathEndMarker = ' ENDPATH**' . '/';
+                
+                $startPos = strpos($header, $pathStartMarker);
+                
+                if ($startPos !== false) {
+                    $startPos += strlen($pathStartMarker);
+                    $endPos = strpos($header, $pathEndMarker, $startPos);
+                    
+                    if ($endPos !== false) {
+                        $originalPath = substr($header, $startPos, $endPos - $startPos);
+                        $mapOffset = 2; // Default
+                        
+                        // Check for attribute bag usage
+                        if (str_contains($header, 'AttributeBag;') && str_contains($header, '?>')) {
+                             $mapOffset = 4;
+                        }
+
+                        $originalLine = max(1, $exceptionLine - $mapOffset);
+
+                        throw new \MonkeysLegion\Template\Exceptions\ViewException(
+                            $e->getMessage() . " (View: " . basename($originalPath) . ")",
+                            0,
+                            1,
+                            $originalPath,
+                            $originalLine,
+                            $e
+                        );
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException(
+            "Error rendering template: " . $e->getMessage(),
+            0,
+            $e
         );
+    }
+    
+    public function getRegistry(): \MonkeysLegion\Template\Support\DirectiveRegistry
+    {
+        return $this->registry;
+    }
+
+    public function setRegistry(\MonkeysLegion\Template\Support\DirectiveRegistry $registry): void
+    {
+        $this->registry = $registry;
     }
 }

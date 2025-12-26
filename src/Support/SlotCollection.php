@@ -10,14 +10,19 @@ namespace MonkeysLegion\Template\Support;
  * Usage in components:
  * {{ $slot }}                    - Default slot
  * {{ $slots->header }}           - Named slot
- * @if($slots->has('footer'))     - Check if slot exists
+ * `@if($slots->has('footer'))`   - Check if slot exists
  * {{ $slots->footer ?? 'Default' }} - With fallback
  */
 class SlotCollection
 {
+    /** @var array<string, mixed> */
     private array $slots = [];
     private mixed $defaultSlot = null;
 
+    /**
+     * @param array<string, mixed> $slots
+     * @param mixed $defaultSlot
+     */
     public function __construct(array $slots = [], mixed $defaultSlot = null)
     {
         $this->slots = $slots;
@@ -94,14 +99,19 @@ class SlotCollection
 
     /**
      * Get all slot names
+     *
+     * @return array<int, string>
      */
     public function names(): array
     {
+        /** @var array<int, string> */
         return array_keys($this->slots);
     }
 
     /**
      * Get all slots as array
+     *
+     * @return array<string, mixed>
      */
     public function all(): array
     {
@@ -160,6 +170,8 @@ class SlotCollection
 
     /**
      * Render multiple slots in order
+     *
+     * @param array<int, string> $names
      */
     public function render(array $names, string $separator = ''): string
     {
@@ -176,6 +188,8 @@ class SlotCollection
 
     /**
      * Create a slot collection from component data
+     *
+     * @param array<string, mixed> $data
      */
     public static function fromArray(array $data): self
     {
