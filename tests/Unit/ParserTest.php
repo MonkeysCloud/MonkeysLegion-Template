@@ -71,9 +71,8 @@ EOT;
         $source = "@include('partials.header', ['foo' => 'bar'])";
         $parsed = $this->parser->parse($source);
 
-        $this->assertStringContainsString("// Include template: partials.header", $parsed);
-        $this->assertStringContainsString("\$__data_include = ['foo' => 'bar'];", $parsed);
-        $this->assertStringContainsString("base_path('resources/views/partials/header.ml.php')", $parsed);
+        $this->assertStringContainsString("\$this->render('partials.header'", $parsed);
+        $this->assertStringContainsString("['foo' => 'bar']", $parsed);
     }
 
     public function testItParsesComponents(): void

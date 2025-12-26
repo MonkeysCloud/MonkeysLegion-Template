@@ -73,16 +73,53 @@ The first call parses → compiles → caches the template; subsequent renders a
 
 ---
 
-## 6 · Blade-style Helpers
+## 6 · Directives & Helpers
 
-| Helper                 | Description                                                                |
-| ---------------------- | -------------------------------------------------------------------------- |
-| @if / @elseif / @endif | Control blocks                                                             |
-| @foreach / @endforeach | Loops (auto-escapes inside {{ }})                                          |
-| @include('partial')    | Inlines another template                                                   |
-| @csrf                  | Outputs <input type="hidden" …> token (when the CSRF package is installed) |
+MLView supports a wide range of directives to make your templates expressive.
 
-(All helpers compile down to raw PHP inside the cached file—no runtime cost.)
+### Control Structures
+
+| Directive                        | Description                             |
+| :------------------------------- | :-------------------------------------- |
+| `@if` / `@elseif` / `@else`      | Standard conditional blocks             |
+| `@unless($cond)`                 | Equivalent to `@if(!$cond)`             |
+| `@isset($var)` / `@empty($var)`  | Check if variable is set or empty       |
+| `@switch` / `@case` / `@default` | Switch statements                       |
+| `@foreach` / `@for` / `@while`   | Loops (`$loop` available in `@foreach`) |
+| `@break` / `@continue`           | Loop control                            |
+
+### Frontend Helpers
+
+| Directive                                | Description                                      |
+| :--------------------------------------- | :----------------------------------------------- |
+| `@json($data)`                           | Outputs safe JSON encoded data                   |
+| `@js($data)`                             | Outputs JavaScript-safe data (unescaped unicode) |
+| `@class(['btn', 'active' => $isActive])` | Conditionally compiled class string              |
+| `@style(['color: red' => $isError])`     | Conditionally compiled inline styles             |
+| `@checked($cond)`                        | Outputs `checked` attribute if true              |
+| `@selected($cond)`                       | Outputs `selected` attribute if true             |
+| `@disabled($cond)`                       | Outputs `disabled` attribute if true             |
+| `@readonly($cond)`                       | Outputs `readonly` attribute if true             |
+
+### Framework Utilities
+
+| Directive                   | Description                                         |
+| :-------------------------- | :-------------------------------------------------- |
+| `@csrf`                     | Outputs CSRF token field (hidden input)             |
+| `@method('PUT')`            | Outputs method spoofing field (hidden input)        |
+| `@error('field')`           | Checks for validation errors (`@enderror` to close) |
+| `@old('field', 'default')`  | Retrieves old input value                           |
+| `@lang('key', ['replace'])` | Translates a string                                 |
+| `@env('production')`        | Checks application environment                      |
+| `@auth` / `@guest`          | Checks authentication status                        |
+
+### Miscellaneous
+
+| Directive   | Description                                       |
+| :---------- | :------------------------------------------------ |
+| `@once`     | Ensures content is only rendered once per request |
+| `@verbatim` | Proteced block (prevents parsing of `{{ }}`)      |
+| `@php`      | Execute raw PHP code block                        |
 
 ---
 
@@ -265,7 +302,20 @@ Inside a component:
 
 - `$slotContent` contains the default (unnamed) slot content
 - `$slots['name']()` calls and renders named slots
-- All attributes from the component tag are available as variables
+- `$attributes` object (AttributeBag) contains all passed attributes
+- `@aware(['color' => 'gray'])` directives to access parent component data
+
+### Attribute Bag
+
+You can output all attributes passed to a component using the `$attributes` variable:
+
+```php
+<div {{ $attributes->merge(['class' => 'alert alert-info']) }}>
+    {{ $slot }}
+</div>
+```
+
+This allows usages like: `<x-alert class="mb-4" id="my-alert" />`, where `class` merges with the default and `id` is added.
 
 ## Template Inclusion
 
@@ -396,14 +446,126 @@ Conditionally include views to keep templates clean:
 
 ---
 
-## 12 · Raw PHP/JS
+@endverbatim
 
-Use `@verbatim` to prevent MLView from parsing Blade-like syntax (useful for Vue/React apps):
+````
+
+---
+
+## 13 · Security & Extensibility
+
+### Context-Aware Escaping (`@escape`)
+
+MLView provides context-aware escaping to prevent XSS in various contexts (HTML, Attributes, JS, URL, CSS).
+By default, `{{ $var }}` escapes for HTML body.
+
+Use `@escape` for specific contexts:
 
 ```php
-@verbatim
-    <div id="app">
-        Hello {{ name }} <!-- This will be ignored by MLView -->
-    </div>
-@endverbatim
+<a href="@escape('url', $link)" onclick="alert(@escape('js', $message))">
+    @escape('html', $text)
+</a>
+````
+
+### Strict Mode
+
+Enable strict mode to warn about raw output `{!! !!}` usage, which helps identify potential security risks.
+
+```php
+$view = new MLView($path, ['strict_mode' => true]);
 ```
+
+When enabled, any `{!! $var !!}` usage will trigger a user warning unless explicitly approved via `@escape('raw', $var)`.
+
+### Custom Directives
+
+Extend the compiler with your own directives:
+
+```php
+$view->addDirective('datetime', function ($expression) {
+    return "<?php echo date('Y-m-d H:i:s', {$expression}); ?>";
+});
+```
+
+Usage: `@datetime($timestamp)`
+
+### Custom Filters
+
+Register custom filters accessible via pipe syntax `|`:
+
+```php
+$view->addFilter('upper', function ($value) {
+    return strtoupper($value);
+});
+```
+
+Usage: `{{ $name | upper }}`
+Chainable: `{{ $name | lower | ucfirst }}`
+Arguments: `{{ $name | limit(10) }}`
+
+---
+
+## 14 · Namespaces & Theming
+
+### View Namespaces
+
+Register namespaces to organize views (e.g. for packages or modules):
+
+```php
+$view->addNamespace('ui', __DIR__ . '/vendor/ui-lib/views');
+```
+
+Usage: `ui::alert` resolves to `/vendor/ui-lib/views/alert.ml.php`.
+
+### Theming System
+
+MLView supports view cascading and theming.
+
+**1. Multiple View Paths:**
+
+```php
+$view->addViewPath('/path/to/my/overrides');
+```
+
+Loader checks paths in order. If `home` is requested, it checks `/overrides/home.ml.php` then default path.
+
+**2. Theme Activation:**
+
+```php
+$view->setTheme('dark');
+// assumes themes are in resources/themes/dark, prepends this path.
+```
+
+**3. Namespace Overrides:**
+Themes can override namespaced views by following the directory convention: `themes/{theme}/vendor/{namespace}/{view}.ml.php`.
+For example, `themes/dark/vendor/ui/alert.ml.php` will override `ui::alert`.
+
+---
+
+## 15 · Production Tooling
+
+MLView includes a CLI tool to help maintain your templates.
+
+### Linting
+
+The linter scans your templates for:
+
+- Missing components (`<x-component>`)
+- Missing included views (`@include`)
+- Syntax errors
+
+**Usage:**
+
+```bash
+# Lint the default views directory
+./bin/mlview lint resources/views
+
+# Check multiple paths
+./bin/mlview lint resources/views,modules/blog/views
+```
+
+If any errors are found, the command exits with a non-zero status code, making it suitable for CI/CD pipelines.
+
+### Compatibility
+
+MLView maintains a compatibility test suite to ensure that standard Blade features work as expected, ensuring a smooth migration path from other engines.

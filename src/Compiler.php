@@ -36,8 +36,24 @@ use MonkeysLegion\Template\Contracts\CompilerInterface;
  */
 class Compiler implements CompilerInterface
 {
-    public function __construct(private \MonkeysLegion\Template\Contracts\ParserInterface $parser)
+    private bool $strictMode = false;
+    private \MonkeysLegion\Template\Support\DirectiveRegistry $registry;
+
+    public function __construct(
+        private \MonkeysLegion\Template\Contracts\ParserInterface $parser,
+        ?\MonkeysLegion\Template\Support\DirectiveRegistry $registry = null
+    ) {
+        $this->registry = $registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
+    }
+
+    public function getRegistry(): \MonkeysLegion\Template\Support\DirectiveRegistry
     {
+        return $this->registry;
+    }
+
+    public function setStrictMode(bool $enable): void
+    {
+        $this->strictMode = $enable;
     }
 
     /**
@@ -62,6 +78,9 @@ class Compiler implements CompilerInterface
         // 3) New directives - JSON and JavaScript helpers
         $php = $this->compileJson($php);
         $php = $this->compileJs($php);
+
+        // 3.5) Custom Directives
+        $php = $this->compileCustomDirectives($php);
 
         // -- Competitive Features --
         $php = $this->compileVerbatim($php);
@@ -110,12 +129,17 @@ class Compiler implements CompilerInterface
         $php = $this->compileDump($php);
         $php = $this->compileDd($php);
 
-        // 13) Control structures
+        // 13) Context-aware escape directive
+        $php = $this->compileEscapeDirective($php);
+
+        // 14) Control structures
         $php = $this->compileConditionals($php);
         $php = $this->compileConditionalsSugar($php);
         $php = $this->compileLoops($php);
 
         // 14) Clean up excessive newlines
+        // We handle this carefully to avoid messing up line numbers too much,
+        // but we do want some cleanup.
         $php = (string)preg_replace('/\n{3,}/', "\n\n", $php);
         $php = trim($php);
 
@@ -123,19 +147,20 @@ class Compiler implements CompilerInterface
         $php = $this->postProcessCodeExamples($php);
 
         $useHeader = "use MonkeysLegion\\Template\\Support\\AttributeBag;\n";
+        $pathHeader = "/**PATH {$path} ENDPATH**/\n";
 
         // If the compiled output starts with a PHP open tag,
         // insert the `use` statement right after it.
         if (str_starts_with($php, '<?php')) {
             $php = (string)preg_replace(
                 '/^<\?php(\s*)/i',
-                "<?php$1{$useHeader}",
+                "<?php$1{$pathHeader}{$useHeader}",
                 $php,
                 1
             );
         } else {
             // Otherwise, prepend a PHP block with the use statement
-            $php = "<?php\n{$useHeader}?>\n" . $php;
+            $php = "<?php\n{$pathHeader}{$useHeader}?>\n" . $php;
         }
 
         return $php;
@@ -385,7 +410,7 @@ class Compiler implements CompilerInterface
     {
         return (string)preg_replace_callback(
             '/@upper\(([^)]+)\)/',
-            fn(array $m) => "\n<?= htmlspecialchars(strtoupper((string)({$m[1]} ?? '')), ENT_QUOTES, 'UTF-8') ?>\n",
+            fn(array $m) => "<?= htmlspecialchars(strtoupper((string)({$m[1]} ?? '')), ENT_QUOTES, 'UTF-8') ?>",
             $php
         );
     }
@@ -400,7 +425,7 @@ class Compiler implements CompilerInterface
             function (array $m) {
                 $key = $m[1];
                 $replace = $m[2] ?? '[]';
-                return "\n<?= trans('{$key}', {$replace}) ?>\n";
+                return "<?= trans('{$key}', {$replace}) ?>";
             },
             $php
         );
@@ -426,7 +451,7 @@ class Compiler implements CompilerInterface
                 $isEscaped = $exprOpen === '{{';
 
                 $phpOutput = $isEscaped
-                    ? "<?= htmlspecialchars((string)({$exprContent} ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                    ? "<?= \\MonkeysLegion\\Template\\Support\\Escaper::attr({$exprContent}) ?>"
                     : "<?= {$exprContent} ?? '' ?>";
 
                 return '<' . $tagStart . $attrStart . $beforeExpr . $phpOutput . $afterExpr . $attrClose;
@@ -473,7 +498,54 @@ class Compiler implements CompilerInterface
                 }
 
                 // 3) Everything else: escaped safely
-                return "<?= htmlspecialchars((string)({$expr} ?? ''), ENT_QUOTES, 'UTF-8') ?>";
+                // Check for filters: $var | filter
+                if (str_contains($expr, '|')) {
+                    $parts = explode('|', $expr);
+                    $first = array_shift($parts);
+                    $code = trim($first);
+                    
+                    // Simple parser for filters
+                    // Format: {{ "hello" | upper | limit:5 }}
+                    // Note: This simple split breaks if '|' is inside strings/arrays. 
+                    // For robust filter parsing a lexer is needed. We will do a basic one for now or regex.
+                    // Let's assume user is careful or we improve regex.
+                    
+                    // Actually, let's use a smarter loop or just regex for each filter
+                    // But we already exploded.
+                    
+                    foreach ($parts as $part) {
+                        $part = trim($part);
+                        if (empty($part)) continue;
+                        
+                        // Check if it has arguments: limit:5 or limit(5)
+                        // Supporting limit:5 syntax like Twig/Liquid? Or limit(5)?
+                        // Let's support Twig-like `filterName` or `filterName(...)`.
+                        // Actually the user requirements said "Twig-like filters". Twig uses `| filter(arg)`.
+                        
+                        // Let's assume strict function call syntax or just name.
+                        // $var | upper => strtoupper($var)
+                        // If custom filter: $registry->filters['upper']($var)
+                        
+                        // To inject into PHP:
+                        // We need to resolve the callable NAME.
+                        // But custom filters are in the registry, not global functions.
+                        // So we generate: $this->registry->getFilters()['name']($value, ...args)
+                        
+                        // Parse name and args
+                        if (preg_match('/^(\w+)(?:\((.*)\))?$/', $part, $fm)) {
+                            $name = $fm[1];
+                            $args = $fm[2] ?? '';
+                            
+                            $code = "(\$this->getRegistry()->hasFilter('{$name}') " .
+                                    "? call_user_func(\$this->getRegistry()->getFilters()['{$name}'], {$code}" . ($args ? ", $args" : "") . ") " .
+                                    ": \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw('Filter {$name} not found and strict mode enabled'))";
+                        }
+                    }
+                    
+                    return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$code}) ?>";
+                }
+
+                return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$expr}) ?>";
             },
             $php
         );
@@ -486,8 +558,12 @@ class Compiler implements CompilerInterface
     {
         return (string)preg_replace_callback(
             '/\{!!\s*(.+?)\s*!!\}/s',
-            static function (array $m): string {
-                return "<?= {$m[1]} ?? '' ?>";
+            function (array $m): string {
+                $content = $m[1];
+                if ($this->strictMode) {
+                    return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw({$content}) ?>";
+                }
+                return "<?= {$content} ?? '' ?>";
             },
             $php
         );
@@ -501,12 +577,12 @@ class Compiler implements CompilerInterface
         return (string)preg_replace_callback(
             '/@dump\(\s*((?>[^()]+|(?R))*)\s*\)/s',
             function (array $m) {
-                return "\n<?php " .
+                return "<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
                     "echo '<pre style=\"margin:0;font-family:monospace;font-size:14px;\">';" .
                     "var_dump({$m[1]});" .
                     "echo '</pre></div>'; " .
-                    "?>\n";
+                    "?>";
             },
             $php
         );
@@ -520,14 +596,14 @@ class Compiler implements CompilerInterface
         return (string)preg_replace_callback(
             '/@dd\(\s*((?>[^()]+|(?R))*)\s*\)/s',
             function (array $m) {
-                return "\n<?php " .
+                return "<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
                     "echo '<h3 style=\"margin:0 0 0.5rem;color:#c00;\">Dump and Die</h3>';" .
                     "echo '<pre style=\"margin:0;font-family:monospace;font-size:14px;\">';" .
                     "var_dump({$m[1]});" .
                     "echo '</pre></div>'; " .
                     "exit(1); " .
-                    "?>\n";
+                    "?>";
             },
             $php
         );
@@ -743,25 +819,26 @@ class Compiler implements CompilerInterface
      */
     private function compileVerbatim(string $php): string
     {
-        // We simply replace {{ }} placeholders to avoid compilation,
-        // but `preProcessCodeExamples` (step 0) handles generic protection.
-        // Actually, `preProcessCodeExamples` handles `<code>` blocks but not `@verbatim`.
-        // Let's implement it similar to preProcess.
-        // BUT, we are at step 3. The parser (step 1) ran.
-        // `preProcessCodeExamples` ran at step 0.
-        // Maybe we should have handled @verbatim in step 0?
-        // If we do it here, we might have already parsed some things?
-        // Actually, @verbatim is for Vue/Alpine {{ }} tags.
-        // If we just protect them from `compileEscapedEchoes` (step 11) that's enough.
-
         return (string)preg_replace_callback(
             '/@verbatim(.*?)@endverbatim/s',
             function ($m) {
                 $content = $m[1];
-                // We need to prevent `compileEscapedEchoes` from touching this.
-                // We can use the same trick: replace with placeholders?
+                
+                // Protect {{ }}
                 $content = str_replace('{{', '___MLVIEW_OPEN_CURLY___', $content);
                 $content = str_replace('}}', '___MLVIEW_CLOSE_CURLY___', $content);
+                
+                // Protect {!! !!}
+                $content = str_replace('{!!', '___MLVIEW_OPEN_RAW___', $content);
+                $content = str_replace('!!}', '___MLVIEW_CLOSE_RAW___', $content);
+
+                // Protect {{-- --}}
+                $content = str_replace('{{--', '___MLVIEW_COMMENT_OPEN___', $content);
+                $content = str_replace('--}}', '___MLVIEW_COMMENT_CLOSE___', $content);
+
+                // Protect @ directives
+                $content = (string)preg_replace('/@([a-zA-Z0-9_]+)/', '___MLVIEW_AT___$1', $content);
+                
                 return $content;
             },
             $php
@@ -941,5 +1018,34 @@ class Compiler implements CompilerInterface
         $php = str_replace('___MLVIEW_ESCAPED_AT___', '@', $php);
 
         return $php;
+    }
+    /**
+     * Compile custom directives registered in the Registry
+     */
+    private function compileCustomDirectives(string $php): string
+    {
+        foreach ($this->registry->getDirectives() as $name => $handler) {
+             /*
+              * Match @name(...) with recursive parenthesis support.
+              */
+             $pattern = "/@{$name}\s*\(((?>[^()]+|(?R))*)\)/s";
+             
+             $php = (string)preg_replace_callback($pattern, function($m) use ($handler) {
+                 return call_user_func($handler, $m[1]);
+             }, $php);
+        }
+        return $php;
+    }
+
+    /**
+     * Compile @escape('type', val) directive
+     */
+    private function compileEscapeDirective(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@escape\(\s*[\'"](.+?)[\'"]\s*,\s*(.+?)\s*\)/s',
+            fn(array $m) => "<?= " . \MonkeysLegion\Template\Support\Escaper::class . "::escape('" . $m[1] . "', " . $m[2] . ") ?>",
+            $php
+        );
     }
 }

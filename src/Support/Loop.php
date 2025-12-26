@@ -71,11 +71,7 @@ class Loop
      */
     public static function start(mixed $items, ?Loop $parent = null): Loop
     {
-        $count = match (true) {
-            is_countable($items) => count($items),
-            $items instanceof \Traversable => iterator_count($items),
-            default => 0,
-        };
+        $count = is_countable($items) ? count($items) : 0;
 
         // If it was a traversable that we just counted, we might have exhausted it if it was a generator.
         // However, in the template, we usually operate on arrays or collections that can be recounted.

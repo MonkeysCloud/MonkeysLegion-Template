@@ -13,6 +13,7 @@ use PHPUnit\Framework\TestCase as BaseTestCase;
 abstract class TestCase extends BaseTestCase
 {
     protected Renderer $renderer;
+    protected Compiler $compiler;
     protected string $cacheDir;
     /** @var array<string, string> */
     protected array $files = [];
@@ -51,14 +52,15 @@ abstract class TestCase extends BaseTestCase
         });
 
         $parser = new Parser();
-        $compiler = new Compiler($parser);
+        $this->compiler = new Compiler($parser);
 
         $this->renderer = new Renderer(
             $parser,
-            $compiler,
+            $this->compiler,
             $loader,
             true,
-            $this->cacheDir
+            $this->cacheDir,
+            $this->compiler->getRegistry()
         );
     }
 

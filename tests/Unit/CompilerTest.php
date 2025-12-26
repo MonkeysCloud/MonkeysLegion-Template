@@ -24,7 +24,7 @@ class CompilerTest extends TestCase
         $source = 'Hello {{ $name }}';
         $compiled = $this->compiler->compile($source, '/tmp/test.ml.php');
 
-        $this->assertStringContainsString("<?= htmlspecialchars((string)(\$name ?? ''), ENT_QUOTES, 'UTF-8') ?>", $compiled);
+        $this->assertStringContainsString("<?= \MonkeysLegion\Template\Support\Escaper::html(\$name) ?>", $compiled);
     }
 
     public function testItCompilesRawEchoes(): void
@@ -41,7 +41,7 @@ class CompilerTest extends TestCase
         $compiled = $this->compiler->compile($source, '/tmp/test.ml.php');
 
         // Compiler preserves whitespace in attributes
-        $this->assertMatchesRegularExpression('/class\="<\?\= htmlspecialchars\(\(string\)\(\s*\$class\s*\?\? \'\'\), ENT_QUOTES, \'UTF-8\'\) \?\>"/s', $compiled);
+        $this->assertStringContainsString('class="<?= \MonkeysLegion\Template\Support\Escaper::attr( $class ) ?>"', $compiled);
     }
 
     public function testItCompilesConditionals(): void

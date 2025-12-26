@@ -195,39 +195,9 @@ class Parser implements ParserInterface
                 $viewName = $m[1];
                 $data = $m[2] ?? '[]';
 
-                // Convert dot notation to path
-                $viewPath = str_replace('.', '/', $viewName);
-
-                return "<?php\n" .
-                    "// Include template: {$viewName}\n" .
-                    "\$__data_include = {$data};\n" .
-                    "\$__include_path = base_path('resources/views/{$viewPath}.ml.php');\n" .
-                    "if (is_file(\$__include_path)) {\n" .
-                    "    \$__ml_scope = \\MonkeysLegion\\Template\\VariableScope::getCurrent();\n" .
-                    "    \$__include_source = file_get_contents(\$__include_path);\n" .
-                    "    \$__include_parser = new \\MonkeysLegion\\Template\\Parser();\n" .
-                    "    \$__include_params = \$__include_parser->extractComponentParams(\$__include_source);\n" .
-                    "    \$__ml_scope->createIsolatedScope(\$__data_include, \$__include_params);\n" .
-                    "    \n" .
-                    "    try {\n" .
-                    "        \$__include_parsed = \$__include_parser->parse(\$__include_source);\n" .
-                    "        \$__include_compiler = new \\MonkeysLegion\\Template\\Compiler(\$__include_parser);\n" .
-                    "        \$__include_compiled = \$__include_compiler->compile(\$__include_parsed, \$__include_path);\n" .
-                    "        \$__include_compiled = substr(\$__include_compiled, strpos(\$__include_compiled, '?>') + 2);\n" .
-                    "        \n" .
-                    "        \$__isolated_data = \$__ml_scope->getCurrentScope();\n" .
-                    "        extract(\$__isolated_data);\n" .
-                    "        \n" .
-                    "        eval('?>' . \$__include_compiled);\n" .
-                    "    } catch (\\Throwable \$__include_error) {\n" .
-                    "        throw new \\RuntimeException('Error in @include(\"{$viewName}\"): ' . \$__include_error->getMessage(), 0, \$__include_error);\n" .
-                    "    } finally {\n" .
-                    "        \$__ml_scope->popScope();\n" .
-                    "    }\n" .
-                    "} else {\n" .
-                    "    throw new \\RuntimeException('Include not found: {$viewName} at {$viewPath}.ml.php');\n" .
-                    "}\n" .
-                    "?>";
+                // Use $this->render() to handle includes via the Renderer.
+                // We merge the current scope data with the specific include data to support variable inheritance.
+                return "<?php echo \$this->render('{$viewName}', array_merge(\\MonkeysLegion\\Template\\VariableScope::getCurrent()->getCurrentScope(), {$data})); ?>";
             },
             $source
         );
@@ -529,5 +499,37 @@ class Parser implements ParserInterface
         $source = (string)preg_replace('/@props\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
         $source = (string)preg_replace('/@param\s*\(\s*\[\s*.*?\s*\]\s*\)\s*(\r?\n)?/s', '', $source);
         return $source;
+    }
+    /**
+     * Extract dependencies (components, includes, layouts) from the source.
+     * Useful for static analysis / linting.
+     *
+     * @param string $source
+     * @return array{components: string[], includes: string[], layouts: string[]}
+     */
+    public function getDependencies(string $source): array
+    {
+        $dependencies = [
+            'components' => [],
+            'includes' => [],
+            'layouts' => [],
+        ];
+
+        // 1. Components <x-name ...>
+        if (preg_match_all('/<x-([a-zA-Z0-9_:.-]+)/', $source, $matches)) {
+            $dependencies['components'] = array_unique($matches[1]);
+        }
+
+        // 2. Includes @include('name')
+        if (preg_match_all('/@include\(\s*[\'"]([^\'"]+)[\'"]/', $source, $matches)) {
+            $dependencies['includes'] = array_unique($matches[1]);
+        }
+
+        // 3. Layouts @extends('name')
+        if (preg_match_all('/@extends\(\s*[\'"]([^\'"]+)[\'"]\)/', $source, $matches)) {
+            $dependencies['layouts'] = array_unique($matches[1]);
+        }
+
+        return $dependencies;
     }
 }
