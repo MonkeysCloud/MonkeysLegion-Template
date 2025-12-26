@@ -503,45 +503,45 @@ class Compiler implements CompilerInterface
                     $parts = explode('|', $expr);
                     $first = array_shift($parts);
                     $code = trim($first);
-                    
+
                     // Simple parser for filters
                     // Format: {{ "hello" | upper | limit:5 }}
                     // Note: This simple split breaks if '|' is inside strings/arrays. 
                     // For robust filter parsing a lexer is needed. We will do a basic one for now or regex.
                     // Let's assume user is careful or we improve regex.
-                    
+
                     // Actually, let's use a smarter loop or just regex for each filter
                     // But we already exploded.
-                    
+
                     foreach ($parts as $part) {
                         $part = trim($part);
                         if (empty($part)) continue;
-                        
+
                         // Check if it has arguments: limit:5 or limit(5)
                         // Supporting limit:5 syntax like Twig/Liquid? Or limit(5)?
                         // Let's support Twig-like `filterName` or `filterName(...)`.
                         // Actually the user requirements said "Twig-like filters". Twig uses `| filter(arg)`.
-                        
+
                         // Let's assume strict function call syntax or just name.
                         // $var | upper => strtoupper($var)
                         // If custom filter: $registry->filters['upper']($var)
-                        
+
                         // To inject into PHP:
                         // We need to resolve the callable NAME.
                         // But custom filters are in the registry, not global functions.
                         // So we generate: $this->registry->getFilters()['name']($value, ...args)
-                        
+
                         // Parse name and args
                         if (preg_match('/^(\w+)(?:\((.*)\))?$/', $part, $fm)) {
                             $name = $fm[1];
                             $args = $fm[2] ?? '';
-                            
+
                             $code = "(\$this->getRegistry()->hasFilter('{$name}') " .
-                                    "? call_user_func(\$this->getRegistry()->getFilters()['{$name}'], {$code}" . ($args ? ", $args" : "") . ") " .
-                                    ": \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw('Filter {$name} not found and strict mode enabled'))";
+                                "? call_user_func(\$this->getRegistry()->getFilters()['{$name}'], {$code}" . ($args ? ", $args" : "") . ") " .
+                                ": \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw('Filter {$name} not found and strict mode enabled'))";
                         }
                     }
-                    
+
                     return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$code}) ?>";
                 }
 
@@ -823,11 +823,11 @@ class Compiler implements CompilerInterface
             '/@verbatim(.*?)@endverbatim/s',
             function ($m) {
                 $content = $m[1];
-                
+
                 // Protect {{ }}
                 $content = str_replace('{{', '___MLVIEW_OPEN_CURLY___', $content);
                 $content = str_replace('}}', '___MLVIEW_CLOSE_CURLY___', $content);
-                
+
                 // Protect {!! !!}
                 $content = str_replace('{!!', '___MLVIEW_OPEN_RAW___', $content);
                 $content = str_replace('!!}', '___MLVIEW_CLOSE_RAW___', $content);
@@ -838,7 +838,7 @@ class Compiler implements CompilerInterface
 
                 // Protect @ directives
                 $content = (string)preg_replace('/@([a-zA-Z0-9_]+)/', '___MLVIEW_AT___$1', $content);
-                
+
                 return $content;
             },
             $php
@@ -932,11 +932,11 @@ class Compiler implements CompilerInterface
      */
     private function compilePhpBlocks(string $php): string
     {
-        // Replace @php with opening PHP tag
-        $php = (string)preg_replace('/^[ \t]*@php\s*$/m', '<?php', $php);
+        // Replace @php with opening PHP tag (support inline)
+        $php = (string)preg_replace('/@php\b/', '<?php', $php);
 
-        // Replace @endphp with closing PHP tag
-        $php = (string)preg_replace('/^[ \t]*@endphp\s*$/m', '?>', $php);
+        // Replace @endphp with closing PHP tag (support inline)
+        $php = (string)preg_replace('/@endphp\b/', '?>', $php);
 
         return $php;
     }
@@ -1025,14 +1025,14 @@ class Compiler implements CompilerInterface
     private function compileCustomDirectives(string $php): string
     {
         foreach ($this->registry->getDirectives() as $name => $handler) {
-             /*
-              * Match @name(...) with recursive parenthesis support.
-              */
-             $pattern = "/@{$name}\s*\(((?>[^()]+|(?R))*)\)/s";
-             
-             $php = (string)preg_replace_callback($pattern, function($m) use ($handler) {
-                 return call_user_func($handler, $m[1]);
-             }, $php);
+            /*
+             * Match @name(...) with recursive parenthesis support.
+             */
+            $pattern = "/@{$name}\s*\(((?>[^()]+|(?R))*)\)/s";
+
+            $php = (string)preg_replace_callback($pattern, function($m) use ($handler) {
+                return call_user_func($handler, $m[1]);
+            }, $php);
         }
         return $php;
     }
