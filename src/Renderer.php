@@ -52,7 +52,7 @@ final class Renderer
 
             $__raw = file_get_contents($__sourcePath);
             if ($__raw === false) {
-                 throw new RuntimeException("Failed to read template source: {$__sourcePath}");
+                throw new RuntimeException("Failed to read template source: {$__sourcePath}");
             }
 
             [$__raw, $sections] = $this->extractSections($__raw);
@@ -185,7 +185,7 @@ final class Renderer
 
             $__source = file_get_contents($__path);
             if ($__source === false) {
-                 throw new RuntimeException("Failed to read component source: {$__path}");
+                throw new RuntimeException("Failed to read component source: {$__path}");
             }
 
             $props = $this->parser->extractComponentParams($__source);
@@ -193,6 +193,10 @@ final class Renderer
             $slots = $__data['slots'] ?? new \MonkeysLegion\Template\Support\SlotCollection([]);
             $passedAttrs = $__data;
             unset($passedAttrs['slots']);
+
+            // Instantiate AttributeBag with passed attributes
+            $attributeBag = new \MonkeysLegion\Template\Support\AttributeBag($passedAttrs);
+            $passedAttrs['attributes'] = $attributeBag;
 
             $scope->createIsolatedScope($passedAttrs, $props);
             $__compiledPath = $this->getCompiledPathForComponent($__path);
@@ -224,7 +228,7 @@ final class Renderer
 
             $output = ob_get_clean();
             if ($output === false) {
-                 throw new RuntimeException("Component buffer closed unexpectedly: {$__path}");
+                throw new RuntimeException("Component buffer closed unexpectedly: {$__path}");
             }
             return $output;
         } catch (Throwable $e) {
@@ -372,20 +376,20 @@ final class Renderer
                 // Safe construction
                 $pathStartMarker = '/' . '**PATH ';
                 $pathEndMarker = ' ENDPATH**' . '/';
-                
+
                 $startPos = strpos($header, $pathStartMarker);
-                
+
                 if ($startPos !== false) {
                     $startPos += strlen($pathStartMarker);
                     $endPos = strpos($header, $pathEndMarker, $startPos);
-                    
+
                     if ($endPos !== false) {
                         $originalPath = substr($header, $startPos, $endPos - $startPos);
                         $mapOffset = 2; // Default
-                        
+
                         // Check for attribute bag usage
                         if (str_contains($header, 'AttributeBag;') && str_contains($header, '?>')) {
-                             $mapOffset = 4;
+                            $mapOffset = 4;
                         }
 
                         $originalLine = max(1, $exceptionLine - $mapOffset);
@@ -409,7 +413,7 @@ final class Renderer
             $e
         );
     }
-    
+
     public function getRegistry(): \MonkeysLegion\Template\Support\DirectiveRegistry
     {
         return $this->registry;
