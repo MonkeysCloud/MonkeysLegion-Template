@@ -222,6 +222,10 @@ final class Renderer
             $scopedData = $scope->getCurrentScope();
             $scopedData['slots'] = $slots;
             $scopedData['slot']  = $slots->getDefault();
+            // Ensure $attrs is available as an alias for $attributes
+            if (isset($scopedData['attributes'])) {
+                $scopedData['attrs'] = $scopedData['attributes'];
+            }
 
             extract($scopedData, EXTR_SKIP);
             include $__compiledPath;
