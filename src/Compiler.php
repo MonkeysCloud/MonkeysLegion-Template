@@ -234,7 +234,7 @@ class Compiler implements CompilerInterface
     private function compileChecked(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@checked\(((?>[^()]+|(?R))*)\)/',
+            '/\@checked\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= ({$m[1]}) ? 'checked' : '' ?>",
             $php
         );
@@ -247,7 +247,7 @@ class Compiler implements CompilerInterface
     private function compileSelected(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@selected\(((?>[^()]+|(?R))*)\)/',
+            '/\@selected\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= ({$m[1]}) ? 'selected' : '' ?>",
             $php
         );
@@ -260,7 +260,7 @@ class Compiler implements CompilerInterface
     private function compileDisabled(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@disabled\(((?>[^()]+|(?R))*)\)/',
+            '/\@disabled\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= ({$m[1]}) ? 'disabled' : '' ?>",
             $php
         );
@@ -273,7 +273,7 @@ class Compiler implements CompilerInterface
     private function compileReadonly(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@readonly\(((?>[^()]+|(?R))*)\)/',
+            '/\@readonly\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= ({$m[1]}) ? 'readonly' : '' ?>",
             $php
         );
@@ -575,7 +575,7 @@ class Compiler implements CompilerInterface
     private function compileDump(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@dump\(\s*((?>[^()]+|(?R))*)\s*\)/s',
+            '/\@dump\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx',
             function (array $m) {
                 return "<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
@@ -594,7 +594,7 @@ class Compiler implements CompilerInterface
     private function compileDd(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@dd\(\s*((?>[^()]+|(?R))*)\s*\)/s',
+            '/\@dd\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx',
             function (array $m) {
                 return "<?php " .
                     "echo '<div style=\"background:#f5f5f5;border:1px solid #ddd;padding:1rem;margin:1rem 0;border-radius:4px;\">';" .
@@ -691,9 +691,9 @@ class Compiler implements CompilerInterface
     private function compileLoops(string $php): string
     {
         // Support nested parentheses in loop headers
-        $foreachPattern = '/@foreach\s*\(((?>[^()]+|(?R))*)\)/';
-        $forPattern     = '/@for\s*\(((?>[^()]+|(?R))*)\)/';
-        $whilePattern   = '/@while\s*\(((?>[^()]+|(?R))*)\)/';
+        $foreachPattern = '/\@foreach\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
+        $forPattern     = '/\@for\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
+        $whilePattern   = '/\@while\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
 
         // @foreach with $loop variable
         // We need to manage the stack.
@@ -1028,7 +1028,7 @@ class Compiler implements CompilerInterface
             /*
              * Match @name(...) with recursive parenthesis support.
              */
-            $pattern = "/@{$name}\s*\(((?>[^()]+|(?R))*)\)/s";
+            $pattern = "/\@{$name}\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx";
 
             $php = (string)preg_replace_callback($pattern, function($m) use ($handler) {
                 return call_user_func($handler, $m[1]);

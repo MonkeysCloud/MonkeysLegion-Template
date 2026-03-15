@@ -103,4 +103,20 @@ EOT;
         // Note: Compiler injects headers, so we check availability of control structure
         $this->assertStringContainsString('if (empty($list)):', $compiled);
     }
+
+    public function testItCompilesNestedParentheses(): void
+    {
+        $source = <<<'EOT'
+@foreach($request->getHeaders() as $k => $v)
+    {{ $k }}: {{ $v }}
+@endforeach
+
+<input type="checkbox" @checked($user->hasRole('admin', ['super']))>
+EOT;
+        $compiled = $this->compiler->compile($source, '/tmp/test.ml.php');
+
+        $this->assertStringContainsString('foreach($__currentLoopData as $k => $v):', $compiled);
+        $this->assertStringContainsString('$this->getLastLoop()->tick(); endforeach;', $compiled);
+        $this->assertStringContainsString("<?= (\$user->hasRole('admin', ['super'])) ? 'checked' : '' ?>", $compiled);
+    }
 }
