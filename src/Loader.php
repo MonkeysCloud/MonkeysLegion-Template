@@ -27,8 +27,8 @@ class Loader implements LoaderInterface
      * @param string       $templateExtension Extension of raw template files (default ".ml.php")
      */
     public function __construct(
-        string|array $sourcePath,
-        string $cachePath,
+        string|array $sourcePath = [],
+        string $cachePath = '',
         string $templateExtension = '.ml.php'
     ) {
         $this->paths = is_array($sourcePath) ? $sourcePath : [$sourcePath];
