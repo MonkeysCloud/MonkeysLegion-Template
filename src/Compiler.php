@@ -174,7 +174,7 @@ class Compiler implements CompilerInterface
     private function compileJson(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@json\((.+?)\)/',
+            '/\@json\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>",
             $php
         );
@@ -187,7 +187,7 @@ class Compiler implements CompilerInterface
     private function compileJs(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@js\((.+?)\)/',
+            '/\@js\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_UNESCAPED_UNICODE) ?>",
             $php
         );
@@ -201,7 +201,7 @@ class Compiler implements CompilerInterface
     private function compileClassHelper(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@class\((.+?)\)/',
+            '/\@class\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             fn(array $m) => "<?= \\MonkeysLegion\\Template\\Support\\AttributeBag::conditional({$m[1]}) ?>",
             $php
         );
@@ -215,7 +215,7 @@ class Compiler implements CompilerInterface
     private function compileStyleHelper(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@style\((.+?)\)/',
+            '/\@style\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
             function (array $m) {
                 return "<?php \$__styles = []; " .
                     "foreach ({$m[1]} as \$__k => \$__v) { " .

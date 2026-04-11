@@ -282,15 +282,24 @@ final class Renderer
             $sections[$m['name']] = $m['content'];
             return '';
         }, $source);
+
+        // -- Added support for shorthand @section('name', 'content') --
+        $shorthandPattern = '/@section\s*\(\s*(?:\'|")(?<name>.+?)(?:\'|")\s*,\s*(?:\'|")(?<content>.*?)(?:\'|")\s*\)/s';
+        $source = (string)preg_replace_callback($shorthandPattern, function (array $m) use (&$sections) {
+            $sections[$m['name']] = $m['content'];
+            return '';
+        }, $source);
+
         return [(string)$source, $sections];
     }
 
     private function replaceYields(string $source, array $sections): string
     {
-        $pattern = '/@yield\((?:\'|")(?<section>.+?)(?:\'|")\)/';
+        $pattern = '/@yield\((?:\'|")(?<section>.+?)(?:\'|")(?:\s*,\s*(?:\'|")(?<default>.*?)(?:\'|"))?\)/';
         return (string)preg_replace_callback($pattern, function (array $m) use ($sections) {
             $sectionName = $m['section'];
-            return $sections[$sectionName] ?? '';
+            $default = $m['default'] ?? '';
+            return $sections[$sectionName] ?? $default;
         }, $source);
     }
     public function startPush(string $section): void {

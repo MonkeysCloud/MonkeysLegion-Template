@@ -459,6 +459,19 @@ class Parser implements ParserInterface
      */
     private function parseSections(string $source): string
     {
+        // 1. Shorthand: @section('name', 'content')
+        $source = (string)preg_replace_callback(
+            '/@section\s*\(\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']*)["\']\s*\)/s',
+            function (array $m) {
+                $name = $m[1];
+                $content = $m[2];
+
+                return "\n<?php \$__ml_sections = \$__ml_sections ?? []; \$__ml_sections['{$name}'] = '{$content}'; ?>\n";
+            },
+            $source
+        );
+
+        // 2. Block: @section('name')...@endsection
         return (string)preg_replace_callback(
             '/@section\(["\']([^"\']+)["\']\)(.*?)@endsection/s',
             function (array $m) {
@@ -478,10 +491,11 @@ class Parser implements ParserInterface
     private function parseYields(string $source): string
     {
         return (string)preg_replace_callback(
-            '/@yield\(["\']([^"\']+)["\']\)/',
+            '/@yield\s*\(\s*["\']([^"\']+)["\'](?:\s*,\s*["\']([^"\']*)["\'])?\s*\)/',
             function (array $m) {
                 $name = $m[1];
-                return "<?php echo \$__ml_sections['{$name}'] ?? ''; ?>";
+                $default = $m[2] ?? '';
+                return "<?php echo \$__ml_sections['{$name}'] ?? '{$default}'; ?>";
             },
             $source
         );
