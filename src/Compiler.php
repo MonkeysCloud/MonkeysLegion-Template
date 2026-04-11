@@ -623,30 +623,29 @@ class Compiler implements CompilerInterface
     private function compileConditionals(string $php): string
     {
         // @if (condition)
-        // @if($slots->has('head'))
         $php = (string)preg_replace(
-            '/^[ \t]*@if\s*\((.*)\)\s*$/m',
+            '/@if\b\s*\((.*?)\)/s',
             '<?php if ($1): ?>',
             $php
         );
 
         // @elseif (condition)
         $php = (string)preg_replace(
-            '/^[ \t]*@elseif\s*\((.*)\)\s*$/m',
+            '/@elseif\b\s*\((.*?)\)/s',
             '<?php elseif ($1): ?>',
             $php
         );
 
         // @else
         $php = (string)preg_replace(
-            '/^[ \t]*@else\s*$/m',
+            '/@else\b/',
             '<?php else: ?>',
             $php
         );
 
         // @endif
         $php = (string)preg_replace(
-            '/^[ \t]*@endif\s*$/m',
+            '/@endif\b/',
             '<?php endif; ?>',
             $php
         );
@@ -660,27 +659,27 @@ class Compiler implements CompilerInterface
     private function compileConditionalsSugar(string $php): string
     {
         // @unless(cond) -> if (! (cond))
-        $php = (string)preg_replace('/^[ \t]*@unless\s*\((.*)\)\s*$/m', '<?php if (! ($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endunless\s*$/m', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@unless\b\s*\((.*?)\)/s', '<?php if (! ($1)): ?>', $php);
+        $php = (string)preg_replace('/@endunless\b/', '<?php endif; ?>', $php);
 
         // @isset(var) -> if (isset(var))
-        $php = (string)preg_replace('/^[ \t]*@isset\s*\((.*)\)\s*$/m', '<?php if (isset($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endisset\s*$/m', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@isset\b\s*\((.*?)\)/s', '<?php if (isset($1)): ?>', $php);
+        $php = (string)preg_replace('/@endisset\b/', '<?php endif; ?>', $php);
 
         // @empty(var) -> if (empty(var))
-        $php = (string)preg_replace('/^[ \t]*@empty\s*\((.*)\)\s*$/m', '<?php if (empty($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endempty\s*$/m', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/@empty\b\s*\((.*?)\)/s', '<?php if (empty($1)): ?>', $php);
+        $php = (string)preg_replace('/@endempty\b/', '<?php endif; ?>', $php);
 
-        // @switch($var)
-        $php = (string)preg_replace('/^[ \t]*@switch\s*\((.*)\)\s*$/m', '<?php switch($1): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endswitch\s*$/m', '<?php endswitch; ?>', $php);
+        // @switch($var) - strip leading whitespace to avoid T_INLINE_HTML
+        $php = (string)preg_replace('/\s*@switch\b\s*\((.*?)\)/s', '<?php switch($1): ?>', $php);
+        $php = (string)preg_replace('/@endswitch\b/', '<?php endswitch; ?>', $php);
 
-        // @case('val') - must close PHP tag so HTML content can be rendered
-        $php = (string)preg_replace('/^[ \t]*@case\s*\((.*)\)\s*$/m', '<?php case $1: ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@default\s*$/m', '<?php default: ?>', $php);
+        // @case('val') - strip leading whitespace to avoid T_INLINE_HTML
+        $php = (string)preg_replace('/\s*@case\b\s*\((.*?)\)/s', '<?php case $1: ?>', $php);
+        $php = (string)preg_replace('/\s*@default\b/', '<?php default: ?>', $php);
 
         // @break - must be in PHP mode
-        $php = (string)preg_replace('/^[ \t]*@break\s*$/m', '<?php break; ?>', $php);
+        $php = (string)preg_replace('/@break\b/', '<?php break; ?>', $php);
 
         return $php;
     }
@@ -932,10 +931,17 @@ class Compiler implements CompilerInterface
      */
     private function compilePhpBlocks(string $php): string
     {
-        // Replace @php with opening PHP tag (support inline)
+        // Handle inline @php(...)
+        $php = (string)preg_replace_callback(
+            '/@php\s*\((.*?)\)/s',
+            fn(array $m) => "<?php {$m[1]}; ?>",
+            $php
+        );
+
+        // Replace @php with opening PHP tag (support block syntax)
         $php = (string)preg_replace('/@php\b/', '<?php', $php);
 
-        // Replace @endphp with closing PHP tag (support inline)
+        // Replace @endphp with closing PHP tag (support block syntax)
         $php = (string)preg_replace('/@endphp\b/', '?>', $php);
 
         return $php;
