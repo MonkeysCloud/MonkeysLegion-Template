@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace MonkeysLegion\Template\Support;
 
 use Generator;
-use MonkeysLegion\Template\Compiler;
+use MonkeysLegion\Template\Contracts\CompilerInterface;
 use MonkeysLegion\Template\Contracts\LoaderInterface;
-use MonkeysLegion\Template\Parser;
+use MonkeysLegion\Template\Contracts\ParserInterface;
 use MonkeysLegion\Template\VariableScope;
 use RuntimeException;
 
@@ -28,14 +28,17 @@ use RuntimeException;
 final class StreamRenderer
 {
     public function __construct(
-        private readonly Parser $parser,
-        private readonly Compiler $compiler,
+        private readonly ParserInterface $parser,
+        private readonly CompilerInterface $compiler,
         private readonly LoaderInterface $loader,
         private readonly string $cacheDir,
     ) {}
 
     /**
      * Render a template and yield output chunks.
+     *
+     * Compiled PHP is cached on disk and only recompiled when the source
+     * template has changed (mtime-based invalidation).
      *
      * @param array<string, mixed> $data
      * @return Generator<int, string, mixed, void>
@@ -47,20 +50,33 @@ final class StreamRenderer
             throw new RuntimeException("Template source not found: {$sourcePath}");
         }
 
-        $raw = file_get_contents($sourcePath);
-        if ($raw === false) {
-            throw new RuntimeException("Failed to read template: {$sourcePath}");
-        }
-
-        $parsed = $this->parser->parse($raw);
-        $php = $this->compiler->compile($parsed, $sourcePath);
-
         if (!is_dir($this->cacheDir)) {
             mkdir($this->cacheDir, 0755, true);
         }
 
-        $tmpPath = $this->cacheDir . '/stream_' . md5($sourcePath) . '.php';
-        file_put_contents($tmpPath, $php);
+        $compiledPath = $this->cacheDir . '/stream_' . md5($sourcePath) . '.php';
+
+        // Only recompile when source has changed
+        $sourceMtime = filemtime($sourcePath);
+        $compiledMtime = is_file($compiledPath) ? filemtime($compiledPath) : false;
+
+        if ($compiledMtime === false || $sourceMtime === false || $sourceMtime > $compiledMtime) {
+            $raw = file_get_contents($sourcePath);
+            if ($raw === false) {
+                throw new RuntimeException("Failed to read template: {$sourcePath}");
+            }
+
+            $parsed = $this->parser->parse($raw);
+            $php = $this->compiler->compile($parsed, $sourcePath);
+
+            $tmpPath = tempnam($this->cacheDir, 'ml_stream_');
+            if ($tmpPath !== false) {
+                file_put_contents($tmpPath, $php);
+                rename($tmpPath, $compiledPath);
+            } else {
+                file_put_contents($compiledPath, $php);
+            }
+        }
 
         try {
             $scope = new VariableScope($data);
@@ -76,7 +92,7 @@ final class StreamRenderer
                 $slots = SlotCollection::fromArray([]);
             }
 
-            include $tmpPath;
+            include $compiledPath;
 
             $remaining = ob_get_clean();
             if ($remaining !== false && $remaining !== '') {
@@ -84,7 +100,6 @@ final class StreamRenderer
             }
         } finally {
             unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-            @unlink($tmpPath);
         }
     }
 

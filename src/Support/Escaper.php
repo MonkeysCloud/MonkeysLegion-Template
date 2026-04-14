@@ -47,12 +47,24 @@ class Escaper
 
     /**
      * Escape CSS content.
+     *
+     * Properly escapes values for use inside CSS property values or identifiers,
+     * preventing CSS injection attacks (e.g., expression(), url(), closing braces).
+     * Uses CSS Unicode escape sequences (\XXXXXX) for all non-safe characters,
+     * correctly handling multi-byte UTF-8 input via mb_ord().
      */
     public static function css(mixed $value): string
     {
-        // simplistic CSS escaping - for now just strip dangerous chars or simple encoding
         $value = (string) ($value ?? '');
-        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+
+        // Escape characters that can break out of CSS contexts or inject malicious CSS.
+        // Replace any character that is not alphanumeric, hyphen, underscore, or space
+        // with its Unicode escape equivalent (for CSS identifier safety).
+        return (string) preg_replace_callback(
+            '/[^\w\s\-]/u',
+            static fn(array $m): string => '\\' . str_pad(strtoupper(dechex(mb_ord($m[0], 'UTF-8'))), 6, '0', STR_PAD_LEFT) . ' ',
+            $value,
+        );
     }
 
     /**

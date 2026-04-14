@@ -363,7 +363,7 @@ final class Renderer
             mkdir($this->cacheDir, 0755, true);
         }
 
-        $tmpPath = $this->cacheDir . DIRECTORY_SEPARATOR . 'str_' . md5($source . serialize($data)) . '.php';
+        $tmpPath = $this->cacheDir . DIRECTORY_SEPARATOR . 'str_' . md5($source) . '.php';
         file_put_contents($tmpPath, $php);
 
         $level = ob_get_level();

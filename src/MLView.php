@@ -193,7 +193,7 @@ class MLView
     {
         $mergedData = array_merge($this->shared, $data);
         $streamRenderer = new Support\StreamRenderer(
-            new Parser(),
+            $this->compiler->getParser(),
             $this->compiler,
             $this->loader,
             $this->cacheDir,
