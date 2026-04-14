@@ -468,7 +468,7 @@ class Compiler implements CompilerInterface
     {
         return (string)preg_replace_callback(
             '/@method\(["\'](.+?)["\']\)/',
-            fn(array $m) => "<?= '<input type=\"hidden\" name=\"_method\" value=\"' . htmlspecialchars('" . $m[1] . "', ENT_QUOTES, 'UTF-8') . '\">' ?>",
+            fn(array $m) => "<?= '<input type=\"hidden\" name=\"_method\" value=\"' . htmlspecialchars(" . var_export($m[1], true) . ", ENT_QUOTES, 'UTF-8') . '\">' ?>",
             $php
         );
     }

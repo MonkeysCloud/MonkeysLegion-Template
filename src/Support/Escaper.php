@@ -50,6 +50,8 @@ class Escaper
      *
      * Properly escapes values for use inside CSS property values or identifiers,
      * preventing CSS injection attacks (e.g., expression(), url(), closing braces).
+     * Uses CSS Unicode escape sequences (\XXXXXX) for all non-safe characters,
+     * correctly handling multi-byte UTF-8 input via mb_ord().
      */
     public static function css(mixed $value): string
     {
@@ -59,8 +61,8 @@ class Escaper
         // Replace any character that is not alphanumeric, hyphen, underscore, or space
         // with its Unicode escape equivalent (for CSS identifier safety).
         return (string) preg_replace_callback(
-            '/[^\w\s\-]/',
-            static fn(array $m): string => '\\' . str_pad(strtoupper(dechex(ord($m[0]))), 6, '0', STR_PAD_LEFT) . ' ',
+            '/[^\w\s\-]/u',
+            static fn(array $m): string => '\\' . str_pad(strtoupper(dechex(mb_ord($m[0], 'UTF-8'))), 6, '0', STR_PAD_LEFT) . ' ',
             $value,
         );
     }
