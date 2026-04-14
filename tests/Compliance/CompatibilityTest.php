@@ -8,20 +8,20 @@ use Tests\TestCase;
 
 class CompatibilityTest extends TestCase
 {
-    public function test_basic_echo()
+    public function test_basic_echo(): void
     {
         $this->createView('echo', 'Hello {{ $name }}');
         $this->assertEquals('Hello World', $this->render('echo', ['name' => 'World']));
     }
 
-    public function test_raw_echo()
+    public function test_raw_echo(): void
     {
         $this->createView('raw', 'Hello {!! $html !!}');
         $html = '<strong>World</strong>';
         $this->assertEquals('Hello <strong>World</strong>', $this->render('raw', ['html' => $html]));
     }
 
-    public function test_if_statement()
+    public function test_if_statement(): void
     {
         $this->createView('if', "
             @if(\$show) 
@@ -32,7 +32,7 @@ class CompatibilityTest extends TestCase
         $this->assertStringNotContainsString('Shown', $this->render('if', ['show' => false]));
     }
 
-    public function test_foreach_loop()
+    public function test_foreach_loop(): void
     {
         $this->createView('loop', "
             @foreach(\$items as \$item)
@@ -46,13 +46,13 @@ class CompatibilityTest extends TestCase
         $this->assertStringContainsString('C-', $output);
     }
 
-    public function test_comments()
+    public function test_comments(): void
     {
         $this->createView('comment', 'Hello {{-- comment --}}World');
         $this->assertEquals('Hello World', $this->render('comment'));
     }
 
-    public function test_include()
+    public function test_include(): void
     {
         $this->createView('child', 'Child content');
         $this->createView('parent', 'Parent @include("child")');
@@ -61,12 +61,15 @@ class CompatibilityTest extends TestCase
     }
 
 
+    /**
+     * @param array<string, mixed> $data
+     */
     protected function render(string $name, array $data = []): string
     {
         return $this->renderer->render($name, $data);
     }
 
-    public function test_basic_component()
+    public function test_basic_component(): void
     {
         // Renderer looks for 'components.alert'
         $this->createView('components.alert', '<div class="alert">{{ $slot }}</div>');
@@ -75,7 +78,7 @@ class CompatibilityTest extends TestCase
         $this->assertEquals('<div class="alert">Success</div>', $this->render('page'));
     }
     
-    public function test_component_attributes()
+    public function test_component_attributes(): void
     {
         $this->createView('components.button', '<button type="{{ $type }}">{{ $slot }}</button>');
         $this->createView('form', '<x-button type="submit">Send</x-button>');

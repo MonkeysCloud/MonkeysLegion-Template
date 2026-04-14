@@ -6,14 +6,14 @@ use Tests\TestCase;
 
 class StrictEscapingTest extends TestCase
 {
-    public function testEscapedEchoUsesEscaper()
+    public function testEscapedEchoUsesEscaper(): void
     {
         $this->createView('test', 'Hello {{ "<script>" }}');
         $output = $this->renderer->render('test');
         $this->assertEquals('Hello &lt;script&gt;', $output);
     }
 
-    public function testAttributeEscaping()
+    public function testAttributeEscaping(): void
     {
         // Compiler::compileAttributeExpressions uses Escaper::attr
         // Syntax: <div class="{{ $val }}">
@@ -23,7 +23,7 @@ class StrictEscapingTest extends TestCase
         $this->assertStringContainsString('data-test="foo&quot;bar"', $output);
     }
 
-    public function testRawEchoInStrictModeTriggersWarning()
+    public function testRawEchoInStrictModeTriggersWarning(): void
     {
         $this->compiler->setStrictMode(true);
         $this->createView('strict_raw', '{!! "<script>" !!}');
@@ -45,7 +45,7 @@ class StrictEscapingTest extends TestCase
         $this->assertTrue($caught, 'Strict mode warning was not triggered for {!! !!}');
     }
 
-    public function testEscapeDirective()
+    public function testEscapeDirective(): void
     {
         // @escape('js', $val)
         $this->createView('escape_js', '<script>var x = @escape(\'js\', ["a" => "b"]);</script>');

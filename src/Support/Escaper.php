@@ -32,7 +32,9 @@ class Escaper
      */
     public static function js(mixed $value): string
     {
-        return json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+        $encoded = json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+
+        return $encoded !== false ? $encoded : '""';
     }
 
     /**

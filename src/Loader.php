@@ -22,9 +22,9 @@ class Loader implements LoaderInterface
     private string $templateExtension;
 
     /**
-     * @param string|array $sourcePath   Directory or directories where raw templates reside
-     * @param string       $cachePath    Directory where compiled templates are stored
-     * @param string       $templateExtension Extension of raw template files (default ".ml.php")
+     * @param string|list<string> $sourcePath   Directory or directories where raw templates reside
+     * @param string              $cachePath    Directory where compiled templates are stored
+     * @param string              $templateExtension Extension of raw template files (default ".ml.php")
      */
     public function __construct(
         string|array $sourcePath = [],

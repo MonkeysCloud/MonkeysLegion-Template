@@ -6,10 +6,19 @@
   "require": {
     "php": "^8.4"
   },
+  "suggest": {
+    "psr/http-message": "Required for HTMX @fragment directive support (^2.0)",
+    "psr/simple-cache": "For PSR-16 compiled template caching via Redis/Memcached (^3.0)",
+    "monkeyscloud/monkeyslegion-di": "Required for class-based component dependency injection (^2.0)",
+    "monkeyscloud/monkeyslegion-cli": "Required for view:compile and lint CLI commands (^2.0)",
+    "monkeyscloud/monkeyslegion-cache": "Full-featured template caching with tags, locks, and stats (^2.0)"
+  },
   "require-dev": {
     "phpunit/phpunit": "^11.5",
     "phpstan/phpstan": "^2.0",
-    "squizlabs/php_codesniffer": "^3.11"
+    "squizlabs/php_codesniffer": "^3.11",
+    "psr/http-message": "^2.0",
+    "psr/simple-cache": "^3.0"
   },
   "autoload": {
     "psr-4": {
@@ -23,13 +32,14 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-main": "1.0.x-dev"
+      "dev-main": "2.0.x-dev"
     }
   },
   "scripts": {
     "test": "phpunit",
     "test:unit": "phpunit --testsuite=Unit",
     "test:integration": "phpunit --testsuite=Integration",
+    "test:perf": "phpunit --testsuite=Performance",
     "test:coverage": "phpunit --coverage-html coverage",
     "phpstan": "phpstan analyse --memory-limit=1G",
     "cs": "phpcs -n",

@@ -30,9 +30,11 @@ class SlotCollection
     }
 
     /**
-     * Get a named slot's content
+     * Get a named slot's content.
+     *
+     * @param array<string, mixed> $data Scoped slot data for back-passing
      */
-    public function get(string $name, mixed $default = ''): string
+    public function get(string $name, mixed $default = '', array $data = []): string
     {
         if (!isset($this->slots[$name])) {
             return is_callable($default) ? $default() : (string)$default;
@@ -40,8 +42,9 @@ class SlotCollection
 
         $slot = $this->slots[$name];
 
+        // Scoped slot: pass data back to the slot closure
         if (is_callable($slot)) {
-            return (string)$slot();
+            return (string)$slot($data);
         }
 
         return (string)$slot;

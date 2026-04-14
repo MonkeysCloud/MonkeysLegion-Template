@@ -39,11 +39,41 @@ class Compiler implements CompilerInterface
     private bool $strictMode = false;
     private \MonkeysLegion\Template\Support\DirectiveRegistry $registry;
 
+    /** Cached filter registry (avoid re-instantiation per echo expression) */
+    private ?\MonkeysLegion\Template\Support\FilterRegistry $filterRegistry = null;
+
+    /**
+     * Precompiled simple directive → PHP replacement map.
+     * These are directives that need no argument parsing — just literal substitution.
+     * Compiled into a single regex in compileSimpleDirectives() for single-pass efficiency.
+     *
+     * @var array<string, string>
+     */
+    private const SIMPLE_DIRECTIVES = [
+        '@else'        => '<?php else: ?>',
+        '@endif'       => '<?php endif; ?>',
+        '@endunless'   => '<?php endif; ?>',
+        '@endisset'    => '<?php endif; ?>',
+        '@endempty'    => '<?php endif; ?>',
+        '@endswitch'   => '<?php endswitch; ?>',
+        '@endfor'      => '<?php endfor; ?>',
+        '@endwhile'    => '<?php endwhile; ?>',
+        '@default'     => '<?php default: ?>',
+    ];
+
     public function __construct(
         private \MonkeysLegion\Template\Contracts\ParserInterface $parser,
         ?\MonkeysLegion\Template\Support\DirectiveRegistry $registry = null
     ) {
         $this->registry = $registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
+    }
+
+    /**
+     * Get or create the cached FilterRegistry.
+     */
+    private function getFilterRegistry(): \MonkeysLegion\Template\Support\FilterRegistry
+    {
+        return $this->filterRegistry ??= new \MonkeysLegion\Template\Support\FilterRegistry();
     }
 
     public function getRegistry(): \MonkeysLegion\Template\Support\DirectiveRegistry
@@ -76,66 +106,196 @@ class Compiler implements CompilerInterface
         $php = $this->compilePhpBlocks($php);
 
         // 3) New directives - JSON and JavaScript helpers
-        $php = $this->compileJson($php);
-        $php = $this->compileJs($php);
+        if (str_contains($php, '@json')) {
+            $php = $this->compileJson($php);
+        }
+        if (str_contains($php, '@js')) {
+            $php = $this->compileJs($php);
+        }
 
         // 3.5) Custom Directives
         $php = $this->compileCustomDirectives($php);
 
         // -- Competitive Features --
-        $php = $this->compileVerbatim($php);
-        $php = $this->compileInject($php);
-        $php = $this->compileStack($php);
-        $php = $this->compileOnce($php);
-        $php = $this->compileAware($php);
-        $php = $this->compileIncludes($php);
+        if (str_contains($php, '@verbatim')) {
+            $php = $this->compileVerbatim($php);
+        }
+        if (str_contains($php, '@inject')) {
+            $php = $this->compileInject($php);
+        }
+        if (str_contains($php, '@push') || str_contains($php, '@stack') || str_contains($php, '@prepend')) {
+            $php = $this->compileStack($php);
+        }
+        if (str_contains($php, '@once')) {
+            $php = $this->compileOnce($php);
+        }
+        if (str_contains($php, '@aware')) {
+            $php = $this->compileAware($php);
+        }
+        if (str_contains($php, '@include')) {
+            $php = $this->compileIncludes($php);
+        }
+
+        // -- Phase 2: Advanced Directives (with early-exit) --
+        if (str_contains($php, '@forelse')) {
+            $php = $this->compileForelse($php);
+        }
+        if (str_contains($php, '@fragment')) {
+            $php = $this->compileFragment($php);
+        }
+        if (str_contains($php, '@teleport')) {
+            $php = $this->compileTeleport($php);
+        }
+        if (str_contains($php, '@can')) {
+            $php = $this->compileCan($php);
+            $php = $this->compileCannot($php);
+        }
+        if (str_contains($php, '@hasSection')) {
+            $php = $this->compileHasSection($php);
+        }
+        if (str_contains($php, '@sectionMissing')) {
+            $php = $this->compileSectionMissing($php);
+        }
+        if (str_contains($php, '@production')) {
+            $php = $this->compileProduction($php);
+        }
+        if (str_contains($php, '@session')) {
+            $php = $this->compileSession($php);
+        }
+        if (str_contains($php, '@pushOnce')) {
+            $php = $this->compilePushOnce($php);
+        }
+        if (str_contains($php, '@includeIf')) {
+            $php = $this->compileIncludeIf($php);
+        }
+        if (str_contains($php, '@parent')) {
+            $php = $this->compileParent($php);
+        }
+        if (str_contains($php, '@required')) {
+            $php = $this->compileRequired($php);
+        }
+        if (str_contains($php, '@use')) {
+            $php = $this->compileUse($php);
+        }
+        if (str_contains($php, '@persist')) {
+            $php = $this->compilePersist($php);
+        }
+        if (str_contains($php, '@model')) {
+            $php = $this->compileModel($php);
+        }
+        if (str_contains($php, '@autoescape')) {
+            $php = $this->compileAutoescape($php);
+        }
 
         // 4) Helper directives - @class() and @style()
-        $php = $this->compileClassHelper($php);
-        $php = $this->compileStyleHelper($php);
+        if (str_contains($php, '@class')) {
+            $php = $this->compileClassHelper($php);
+        }
+        if (str_contains($php, '@style')) {
+            $php = $this->compileStyleHelper($php);
+        }
 
         // 5) Form helpers and selection helpers
-        $php = $this->compileChecked($php);
-        $php = $this->compileSelected($php);
-        $php = $this->compileDisabled($php);
-        $php = $this->compileReadonly($php);
+        if (str_contains($php, '@checked')) {
+            $php = $this->compileChecked($php);
+        }
+        if (str_contains($php, '@selected')) {
+            $php = $this->compileSelected($php);
+        }
+        if (str_contains($php, '@disabled')) {
+            $php = $this->compileDisabled($php);
+        }
+        if (str_contains($php, '@readonly')) {
+            $php = $this->compileReadonly($php);
+        }
 
         // 6) CSRF + method spoofing
-        $php = $this->compileCsrf($php);
-        $php = $this->compileMethod($php);
+        if (str_contains($php, '@csrf')) {
+            $php = $this->compileCsrf($php);
+        }
+        if (str_contains($php, '@method')) {
+            $php = $this->compileMethod($php);
+        }
 
         // 7) Environment / auth directives
-        $php = $this->compileEnv($php);
-        $php = $this->compileAuth($php);
-        $php = $this->compileGuest($php);
+        if (str_contains($php, '@env')) {
+            $php = $this->compileEnv($php);
+        }
+        if (str_contains($php, '@auth')) {
+            $php = $this->compileAuth($php);
+        }
+        if (str_contains($php, '@guest')) {
+            $php = $this->compileGuest($php);
+        }
 
         // 8) Validation helpers
-        $php = $this->compileError($php);
-        $php = $this->compileEndError($php);
-        $php = $this->compileOld($php);
+        if (str_contains($php, '@error')) {
+            $php = $this->compileError($php);
+            $php = $this->compileEndError($php);
+        }
+        if (str_contains($php, '@old')) {
+            $php = $this->compileOld($php);
+        }
 
         // 9) Existing custom directives (@upper, @lang)
-        $php = $this->compileUpper($php);
-        $php = $this->compileLang($php);
+        if (str_contains($php, '@upper')) {
+            $php = $this->compileUpper($php);
+        }
+        if (str_contains($php, '@lang')) {
+            $php = $this->compileLang($php);
+        }
 
-        // 10) Process expressions in HTML attributes
+        // 10) Template macros (@macro/@endmacro/@call)
+        if (str_contains($php, '@macro')) {
+            $php = $this->compileMacro($php);
+            $php = $this->compileEndMacro($php);
+        }
+        if (str_contains($php, '@call')) {
+            $php = $this->compileCall($php);
+        }
+
+        // 10.5) Template-level options (@options)
+        if (str_contains($php, '@options')) {
+            $php = $this->compileOptions($php);
+        }
+
+        // 10.6) Fragment caching (@cache/@endcache)
+        if (str_contains($php, '@cache')) {
+            $php = $this->compileCache($php);
+        }
+
+        // 11) Process expressions in HTML attributes
         $php = $this->compileAttributeExpressions($php);
 
         // 11) Regular escaped and raw echoes
-        $php = $this->compileEscapedEchoes($php);
-        $php = $this->compileRawEchoes($php);
+        if (str_contains($php, '{{')) {
+            $php = $this->compileEscapedEchoes($php);
+        }
+        if (str_contains($php, '{!!')) {
+            $php = $this->compileRawEchoes($php);
+        }
 
         // 12) Debugging directives
-        $php = $this->compileDump($php);
-        $php = $this->compileDd($php);
+        if (str_contains($php, '@dump')) {
+            $php = $this->compileDump($php);
+        }
+        if (str_contains($php, '@dd')) {
+            $php = $this->compileDd($php);
+        }
 
         // 13) Context-aware escape directive
-        $php = $this->compileEscapeDirective($php);
+        if (str_contains($php, '@escape')) {
+            $php = $this->compileEscapeDirective($php);
+        }
 
-        // 14) Control structures
+        // 14) Element-level HEEx-style directives (:if, :for, :unless on HTML elements)
+        $php = $this->compileElementLevelDirectives($php);
+
+        // 15) Control structures — consolidated with single-pass simple directives
         $php = $this->compileConditionals($php);
         $php = $this->compileConditionalsSugar($php);
         $php = $this->compileLoops($php);
+        $php = $this->compileSimpleDirectives($php);
 
         // 14) Clean up excessive newlines
         // We handle this carefully to avoid messing up line numbers too much,
@@ -174,7 +334,7 @@ class Compiler implements CompilerInterface
     private function compileJson(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@json\((.+?)\)/',
+            '/@json\s*\(((?>(?:[^()]+|\((?:(?:[^()]+|(?1))*)\)))+)\)/s',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>",
             $php
         );
@@ -187,7 +347,7 @@ class Compiler implements CompilerInterface
     private function compileJs(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@js\((.+?)\)/',
+            '/@js\s*\(((?>(?:[^()]+|\((?:(?:[^()]+|(?1))*)\)))+)\)/s',
             fn(array $m) => "<?= json_encode({$m[1]}, JSON_UNESCAPED_UNICODE) ?>",
             $php
         );
@@ -201,7 +361,7 @@ class Compiler implements CompilerInterface
     private function compileClassHelper(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@class\((.+?)\)/',
+            '/@class\s*\(((?>(?:[^()]+|\((?:(?:[^()]+|(?1))*)\)))+)\)/s',
             fn(array $m) => "<?= \\MonkeysLegion\\Template\\Support\\AttributeBag::conditional({$m[1]}) ?>",
             $php
         );
@@ -215,7 +375,7 @@ class Compiler implements CompilerInterface
     private function compileStyleHelper(string $php): string
     {
         return (string)preg_replace_callback(
-            '/@style\((.+?)\)/',
+            '/@style\s*\(((?>(?:[^()]+|\((?:(?:[^()]+|(?1))*)\)))+)\)/s',
             function (array $m) {
                 return "<?php \$__styles = []; " .
                     "foreach ({$m[1]} as \$__k => \$__v) { " .
@@ -475,9 +635,11 @@ class Compiler implements CompilerInterface
      */
     private function compileEscapedEchoes(string $php): string
     {
+        $registry = $this->getFilterRegistry();
+
         return (string)preg_replace_callback(
             '/\{\{\s*(.+?)\s*\}\}/s',
-            static function (array $m): string {
+            static function (array $m) use ($registry): string {
                 $expr = trim($m[1]);
 
                 // 1) Slots: raw HTML
@@ -498,51 +660,51 @@ class Compiler implements CompilerInterface
                 }
 
                 // 3) Everything else: escaped safely
-                // Check for filters: $var | filter
+                // Check for filters: $var | filter | filter(arg)
                 if (str_contains($expr, '|')) {
-                    $parts = explode('|', $expr);
-                    $first = array_shift($parts);
-                    $code = trim($first);
+                    // Balance-aware pipe splitting: don't split on | inside strings/arrays
+                    $filters = self::splitFilterPipeline($expr);
+                    $baseExpr = trim((string) array_shift($filters));
 
-                    // Simple parser for filters
-                    // Format: {{ "hello" | upper | limit:5 }}
-                    // Note: This simple split breaks if '|' is inside strings/arrays. 
-                    // For robust filter parsing a lexer is needed. We will do a basic one for now or regex.
-                    // Let's assume user is careful or we improve regex.
+                    if (!empty($filters)) {
+                        $code = $baseExpr;
+                        $skipEscape = false;
 
-                    // Actually, let's use a smarter loop or just regex for each filter
-                    // But we already exploded.
+                        foreach ($filters as $filterStr) {
+                            $filterStr = trim($filterStr);
+                            if ($filterStr === '') {
+                                continue;
+                            }
+                            // Parse filter name and optional args: upper, truncate(50, '...')
+                            if (preg_match('/^(\w+)(?:\((.*)\))?$/s', $filterStr, $fm)) {
+                                $name = $fm[1];
+                                $args = $fm[2] ?? '';
 
-                    foreach ($parts as $part) {
-                        $part = trim($part);
-                        if (empty($part)) continue;
+                                if ($name === 'raw') {
+                                    $skipEscape = true;
+                                    continue;
+                                }
 
-                        // Check if it has arguments: limit:5 or limit(5)
-                        // Supporting limit:5 syntax like Twig/Liquid? Or limit(5)?
-                        // Let's support Twig-like `filterName` or `filterName(...)`.
-                        // Actually the user requirements said "Twig-like filters". Twig uses `| filter(arg)`.
-
-                        // Let's assume strict function call syntax or just name.
-                        // $var | upper => strtoupper($var)
-                        // If custom filter: $registry->filters['upper']($var)
-
-                        // To inject into PHP:
-                        // We need to resolve the callable NAME.
-                        // But custom filters are in the registry, not global functions.
-                        // So we generate: $this->registry->getFilters()['name']($value, ...args)
-
-                        // Parse name and args
-                        if (preg_match('/^(\w+)(?:\((.*)\))?$/', $part, $fm)) {
-                            $name = $fm[1];
-                            $args = $fm[2] ?? '';
-
-                            $code = "(\$this->getRegistry()->hasFilter('{$name}') " .
-                                "? call_user_func(\$this->getRegistry()->getFilters()['{$name}'], {$code}" . ($args ? ", $args" : "") . ") " .
-                                ": \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw('Filter {$name} not found and strict mode enabled'))";
+                                // Built-in compilable filter → raw PHP
+                                if ($registry->hasFilter($name) || self::isCompilableFilter($name)) {
+                                    $code = $registry->compileFilterChain($code, [
+                                        ['name' => $name, 'args' => $args],
+                                    ]);
+                                } else {
+                                    // Runtime filter → call through Renderer's DirectiveRegistry
+                                    $argsCode = $args !== '' ? ", {$args}" : '';
+                                    $code = "(\$this->getRegistry()->hasFilter('{$name}') " .
+                                        "? call_user_func(\$this->getRegistry()->getFilters()['{$name}'], {$code}{$argsCode}) " .
+                                        ": \\MonkeysLegion\\Template\\Support\\Escaper::checkStrictRaw('Filter {$name} not found and strict mode enabled'))";
+                                }
+                            }
                         }
-                    }
 
-                    return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$code}) ?>";
+                        if ($skipEscape) {
+                            return "<?= {$code} ?>";
+                        }
+                        return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$code}) ?>";
+                    }
                 }
 
                 return "<?= \\MonkeysLegion\\Template\\Support\\Escaper::html({$expr}) ?>";
@@ -637,50 +799,31 @@ class Compiler implements CompilerInterface
             $php
         );
 
-        // @else
-        $php = (string)preg_replace(
-            '/^[ \t]*@else\s*$/m',
-            '<?php else: ?>',
-            $php
-        );
-
-        // @endif
-        $php = (string)preg_replace(
-            '/^[ \t]*@endif\s*$/m',
-            '<?php endif; ?>',
-            $php
-        );
+        // @else and @endif handled by compileSimpleDirectives()
 
         return $php;
     }
 
     /**
-     * Compile conditional sugars: @unless, @isset, @empty, @switch, @case, @default
+     * Compile conditional sugars: @unless, @isset, @empty, @switch, @case
+     * Simple closing directives (@endunless, @endisset, etc.) handled by compileSimpleDirectives()
      */
     private function compileConditionalsSugar(string $php): string
     {
         // @unless(cond) -> if (! (cond))
         $php = (string)preg_replace('/^[ \t]*@unless\s*\((.*)\)\s*$/m', '<?php if (! ($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endunless\s*$/m', '<?php endif; ?>', $php);
 
         // @isset(var) -> if (isset(var))
         $php = (string)preg_replace('/^[ \t]*@isset\s*\((.*)\)\s*$/m', '<?php if (isset($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endisset\s*$/m', '<?php endif; ?>', $php);
 
         // @empty(var) -> if (empty(var))
         $php = (string)preg_replace('/^[ \t]*@empty\s*\((.*)\)\s*$/m', '<?php if (empty($1)): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endempty\s*$/m', '<?php endif; ?>', $php);
 
         // @switch($var)
         $php = (string)preg_replace('/^[ \t]*@switch\s*\((.*)\)\s*$/m', '<?php switch($1): ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@endswitch\s*$/m', '<?php endswitch; ?>', $php);
 
         // @case('val') - must close PHP tag so HTML content can be rendered
         $php = (string)preg_replace('/^[ \t]*@case\s*\((.*)\)\s*$/m', '<?php case $1: ?>', $php);
-        $php = (string)preg_replace('/^[ \t]*@default\s*$/m', '<?php default: ?>', $php);
-
-        // @break - must be in PHP mode
-        $php = (string)preg_replace('/^[ \t]*@break\s*$/m', '<?php break; ?>', $php);
 
         return $php;
     }
@@ -727,17 +870,46 @@ class Compiler implements CompilerInterface
 
         // @for
         $php = (string)preg_replace($forPattern, "<?php for ($1): ?>", $php);
-        $php = (string)preg_replace('/@endfor\b/', "<?php endfor; ?>", $php);
 
         // @while
         $php = (string)preg_replace($whilePattern, "<?php while ($1): ?>", $php);
-        $php = (string)preg_replace('/@endwhile\b/', "<?php endwhile; ?>", $php);
 
-        // Loop control
-        $php = (string)preg_replace('/@break\b/', '<?php break; ?>', $php);
-        $php = (string)preg_replace('/@continue\b/', '<?php continue; ?>', $php);
+        // @endfor, @endwhile, @break, @continue handled by compileSimpleDirectives()
 
         return $php;
+    }
+
+    /**
+     * Single-pass replacement for all no-argument directives.
+     *
+     * Consolidates 11+ individual preg_replace calls into one regex with an
+     * alternation group. Each directive maps to a constant PHP output string
+     * via the SIMPLE_DIRECTIVES constant.
+     */
+    private function compileSimpleDirectives(string $php): string
+    {
+        // Build alternation: @else|@endif|@endunless|...
+        $directives = self::SIMPLE_DIRECTIVES;
+
+        // Add directives not in the constant (loop-related, handled here for perf)
+        $directives['@break']    = '<?php break; ?>';
+        $directives['@continue'] = '<?php continue; ?>';
+
+        $escapedKeys = array_map(
+            static fn(string $d): string => preg_quote(ltrim($d, '@'), '/'),
+            array_keys($directives),
+        );
+
+        // Pattern: match @directive at line boundaries with optional whitespace
+        $pattern = '/^[ \t]*@(' . implode('|', $escapedKeys) . ')\s*$/m';
+
+        return (string) preg_replace_callback(
+            $pattern,
+            static function (array $m) use ($directives): string {
+                return $directives['@' . $m[1]] ?? $m[0];
+            },
+            $php,
+        );
     }
 
     /**
@@ -857,7 +1029,7 @@ class Compiler implements CompilerInterface
         // foreach ($defaults as $k => $v) $k = $scope->getAware($k, $v);
 
         return (string)preg_replace_callback(
-            '/@aware\((.+?)\)/',
+            '/@aware\s*\(((?>(?:[^()]+|\((?:(?:[^()]+|(?1))*)\)))+)\)/s',
             function ($m) {
                 return "<?php foreach ({$m[1]} as \$__k => \$__v) { \$\$__k = \MonkeysLegion\Template\VariableScope::getCurrent()->getAware(\$__k, \$__v); } ?>";
             },
@@ -939,6 +1111,68 @@ class Compiler implements CompilerInterface
         $php = (string)preg_replace('/@endphp\b/', '?>', $php);
 
         return $php;
+    }
+
+    /**
+     * Split expression on pipe `|` characters, respecting string and bracket nesting.
+     *
+     * Ensures pipes inside strings, arrays, or parentheses are not split.
+     *
+     * @return list<string>
+     */
+    private static function splitFilterPipeline(string $expr): array
+    {
+        $parts = [];
+        $current = '';
+        $depth = 0;
+        $inSingle = false;
+        $inDouble = false;
+        $len = strlen($expr);
+
+        for ($i = 0; $i < $len; $i++) {
+            $char = $expr[$i];
+
+            if ($char === '\\' && $i + 1 < $len) {
+                $current .= $char . $expr[++$i];
+                continue;
+            }
+
+            if ($char === "'" && !$inDouble) {
+                $inSingle = !$inSingle;
+            } elseif ($char === '"' && !$inSingle) {
+                $inDouble = !$inDouble;
+            }
+
+            if (!$inSingle && !$inDouble) {
+                if ($char === '(' || $char === '[') {
+                    $depth++;
+                } elseif ($char === ')' || $char === ']') {
+                    $depth--;
+                }
+
+                if ($char === '|' && $depth === 0) {
+                    $parts[] = $current;
+                    $current = '';
+                    continue;
+                }
+            }
+
+            $current .= $char;
+        }
+
+        $parts[] = $current;
+
+        return $parts;
+    }
+
+    /**
+     * Check if a filter name is a built-in compilable filter.
+     */
+    private static function isCompilableFilter(string $name): bool
+    {
+        static $registry = null;
+        $registry ??= new \MonkeysLegion\Template\Support\FilterRegistry();
+        return $registry->hasFilter($name);
     }
 
     /**
@@ -1047,5 +1281,513 @@ class Compiler implements CompilerInterface
             fn(array $m) => "<?= " . \MonkeysLegion\Template\Support\Escaper::class . "::escape('" . $m[1] . "', " . $m[2] . ") ?>",
             $php
         );
+    }
+
+    // =========================================================================
+    // Phase 2: Advanced Directives
+    // =========================================================================
+
+    /**
+     * Compile `@forelse`($items as $item) ... @empty ... @endforelse
+     */
+    private function compileForelse(string $php): string
+    {
+        $pattern = '/@forelse\s*\(((?>[^()]+|(?R))*)\)/';
+
+        $php = (string)preg_replace_callback($pattern, function (array $m): string {
+            $expression = $m[1];
+            if (preg_match('/^(.*)\s+as\s+(.*)$/i', $expression, $parts)) {
+                $iterable = $parts[1];
+                return "<?php \$__forelseData = {$iterable}; \$__forelseEmpty = true; " .
+                    "\$this->addLoop(\$__forelseData); " .
+                    "foreach(\$__forelseData as {$parts[2]}): " .
+                    "\$__forelseEmpty = false; \$loop = \$this->getLastLoop(); ?>";
+            }
+            return "<?php foreach({$expression}): ?>";
+        }, $php);
+
+        // Only match bare @empty (no args) — the forelse "else" clause.
+        // @empty($var) is a standalone conditional handled by compileConditionalsSugar.
+        $php = (string)preg_replace(
+            '/@empty(?!\s*\()/',
+            '<?php $this->getLastLoop()?->tick(); endforeach; $this->popLoop(); $loop = $this->getLastLoop(); if ($__forelseEmpty): ?>',
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endforelse\b/', '<?php endif; ?>', $php);
+
+        return $php;
+    }
+
+    /**
+     * Compile `@fragment`('name') ... @endfragment — HTMX partial rendering
+     */
+    private function compileFragment(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@fragment\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php \$__fragmentName = '{$m[1]}'; ob_start(); ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace(
+            '/@endfragment\b/',
+            '<?php $__fragmentContent = ob_get_clean(); ' .
+            'if ($this->isHtmxRequest() && ($this->getRequest()?->getHeaderLine(\'HX-Target\') === $__fragmentName ' .
+            '|| $this->getRequest()?->getHeaderLine(\'HX-Fragment\') === $__fragmentName)) { ' .
+            'echo $__fragmentContent; return; } echo $__fragmentContent; ?>',
+            $php,
+        );
+
+        return $php;
+    }
+
+    /**
+     * Compile `@teleport`('selector') ... @endteleport
+     */
+    private function compileTeleport(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@teleport\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php ob_start(); /* teleport:{$m[1]} */ ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace(
+            '/@endteleport\b/',
+            '<?php $__teleportContent = ob_get_clean(); echo "<!-- teleport -->" . $__teleportContent . "<!-- /teleport -->"; ?>',
+            $php,
+        );
+
+        return $php;
+    }
+
+    /**
+     * Compile `@can`('ability', $model) ... @endcan
+     */
+    private function compileCan(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@can\s*\(\s*[\'"]([^"\']+)[\'"]\s*(?:,\s*(.+?))?\s*\)/',
+            function (array $m): string {
+                $ability = $m[1];
+                $model = isset($m[2]) ? ', ' . $m[2] : '';
+                return "<?php if (function_exists('auth') && auth()->can('{$ability}'{$model})): ?>";
+            },
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endcan\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@cannot`('ability', $model) ... @endcannot
+     */
+    private function compileCannot(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@cannot\s*\(\s*[\'"]([^"\']+)[\'"]\s*(?:,\s*(.+?))?\s*\)/',
+            function (array $m): string {
+                $ability = $m[1];
+                $model = isset($m[2]) ? ', ' . $m[2] : '';
+                return "<?php if (function_exists('auth') && auth()->cannot('{$ability}'{$model})): ?>";
+            },
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endcannot\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@hasSection`('name') ... @endhasSection
+     */
+    private function compileHasSection(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@hasSection\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php if (isset(\$__sections['{$m[1]}'])): ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endhasSection\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@sectionMissing`('name') ... @endsectionMissing
+     */
+    private function compileSectionMissing(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@sectionMissing\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php if (!isset(\$__sections['{$m[1]}'])): ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endsectionMissing\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@production` ... @endproduction
+     */
+    private function compileProduction(string $php): string
+    {
+        $php = (string)preg_replace(
+            '/@production\b/',
+            "<?php if (function_exists('app_env') && app_env() === 'production'): ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endproduction\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@session`('key') ... @endsession — check session and inject $value
+     */
+    private function compileSession(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@session\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php if (function_exists('session') && session()->has('{$m[1]}')): " .
+                "\$value = session()->get('{$m[1]}'); ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endsession\b/', '<?php endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@pushOnce`('stack') ... @endPushOnce
+     */
+    private function compilePushOnce(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@pushOnce\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php if (\$this->addOnceHash('push_once_{$m[1]}_' . md5(__FILE__ . __LINE__))): \$this->startPush('{$m[1]}'); ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endPushOnce\b/', '<?php $this->stopPush(); endif; ?>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@includeIf`('view', [...]) — include only if view exists
+     */
+    private function compileIncludeIf(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@includeIf\s*\(\s*[\'"]([^"\']+)[\'"]\s*(?:,\s*((?>[^()]+|\((?:(?:[^()]+|(?1))*)\))+))?\s*\)/',
+            function (array $m): string {
+                $view = $m[1];
+                $data = isset($m[2]) ? ', ' . $m[2] : '';
+                return "<?php try { echo \$this->render('{$view}'{$data}); } catch (\\RuntimeException) {} ?>";
+            },
+            $php,
+        );
+    }
+
+    /**
+     * Compile `@parent` — render parent section content
+     */
+    private function compileParent(string $php): string
+    {
+        return (string)preg_replace('/@parent\b/', '@@parent_placeholder@@', $php);
+    }
+
+    /**
+     * Compile `@required`($condition) — conditional HTML required attribute
+     */
+    private function compileRequired(string $php): string
+    {
+        return (string)preg_replace(
+            '/@required\s*\(\s*(.+?)\s*\)/',
+            '<?php if ($1): ?> required<?php endif; ?>',
+            $php,
+        );
+    }
+
+    /**
+     * Compile `@use`(ClassName, 'Alias') — import PHP class in template
+     */
+    private function compileUse(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@use\s*\(\s*[\'"]([^"\']+)[\'"]\s*(?:,\s*[\'"]([^"\']+)[\'"]\s*)?\)/',
+            function (array $m): string {
+                $class = $m[1];
+                $alias = isset($m[2]) ? $m[2] : basename(str_replace('\\', '/', $class));
+                return "<?php use {$class} as {$alias}; ?>";
+            },
+            $php,
+        );
+    }
+
+    /**
+     * Compile `@persist`('id') ... @endpersist — HTMX morph-merge container
+     */
+    private function compilePersist(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@persist\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<div id=\"persist-{$m[1]}\" data-persist>",
+            $php,
+        );
+
+        $php = (string)preg_replace('/@endpersist\b/', '</div>', $php);
+        return $php;
+    }
+
+    /**
+     * Compile `@model`(App\Entity\User) — PHPDoc type hint for IDE autocompletion
+     */
+    private function compileModel(string $php): string
+    {
+        return (string)preg_replace_callback(
+            '/@model\s*\(\s*([A-Za-z0-9_\\\\]+)\s*\)/',
+            fn(array $m) => "<?php /** @var \\{$m[1]} \$model */ ?>",
+            $php,
+        );
+    }
+
+    /**
+     * Compile `@autoescape`('context') ... @endautoescape — context-specific escaping
+     */
+    private function compileAutoescape(string $php): string
+    {
+        $php = (string)preg_replace_callback(
+            '/@autoescape\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)/',
+            fn(array $m) => "<?php \$__previousEscapeContext = \$__escapeContext ?? 'html'; \$__escapeContext = '{$m[1]}'; ?>",
+            $php,
+        );
+
+        $php = (string)preg_replace(
+            '/@endautoescape\b/',
+            '<?php $__escapeContext = $__previousEscapeContext ?? \'html\'; ?>',
+            $php,
+        );
+
+        return $php;
+    }
+
+    // =========================================================================
+    // Phase 2: Element-Level HEEx Directives
+    // =========================================================================
+
+    /**
+     * Compile @macro('name', $param1, $param2) → define a reusable template snippet.
+     */
+    private function compileMacro(string $php): string
+    {
+        return (string) preg_replace(
+            "/@macro\s*\(\s*'([^']+)'\s*(?:,\s*(.*?))?\)/s",
+            '<?php $__macros[\'$1\'] = function($2) { ob_start(); ?>',
+            $php,
+        );
+    }
+
+    /**
+     * Compile @endmacro → end macro definition.
+     */
+    private function compileEndMacro(string $php): string
+    {
+        return str_replace('@endmacro', '<?php return ob_get_clean(); }; ?>', $php);
+    }
+
+    /**
+     * Compile @call('name', $arg1, $arg2) → invoke a defined macro.
+     */
+    private function compileCall(string $php): string
+    {
+        return (string) preg_replace(
+            "/@call\s*\(\s*'([^']+)'\s*(?:,\s*(.*?))?\)/s",
+            '<?= isset($__macros[\'$1\']) ? $__macros[\'$1\']($2) : \'\' ?>',
+            $php,
+        );
+    }
+
+    /**
+     * Compile @options([...]) → template-level configuration.
+     *
+     * Extracts options and stores them as template metadata.
+     * Currently supports: strict, autoescape, layout.
+     */
+    private function compileOptions(string $php): string
+    {
+        return (string) preg_replace_callback(
+            "/@options\s*\(\s*(\[.*?\])\s*\)/s",
+            function (array $m): string {
+                return "<?php \$__templateOptions = {$m[1]}; ?>";
+            },
+            $php,
+        );
+    }
+
+    /**
+     * Compile cache/endcache directives.
+     *
+     * When $__ml_cache (PSR-16) is available, the block output is cached.
+     * When no cache is set, the block renders normally with no overhead.
+     *
+     * Syntax examples:
+     *   cache('sidebar-' . $userId, 300)       - key + TTL in seconds
+     *   cache('static-nav')                      - key only (no TTL = null)
+     *   endcache
+     */
+    private function compileCache(string $php): string
+    {
+        // @cache('key') or @cache('key', ttl)
+        $php = (string) preg_replace_callback(
+            '/@cache\s*\(\s*((?>[^()]+|\((?:(?:[^()]+|(?1)))*\))+)\s*\)/s',
+            function (array $m): string {
+                $args = trim($m[1]);
+                // Split on first comma not inside parens
+                $parts = preg_split('/,(?![^(]*\))/', $args, 2);
+                if ($parts === false) {
+                    $parts = [$args];
+                }
+                $key = trim($parts[0]);
+                $ttl = isset($parts[1]) ? trim($parts[1]) : 'null';
+
+                return "<?php \$__cacheTtl = {$ttl}; \$__cacheKey = 'ml_frag:' . ({$key});\n"
+                    . "\$__cacheHit = isset(\$__ml_cache) ? \$__ml_cache->get(\$__cacheKey) : null;\n"
+                    . "if (\$__cacheHit !== null): echo \$__cacheHit; else: ob_start(); ?>";
+            },
+            $php,
+        );
+
+        // @endcache — closes the if/else block
+        return (string) preg_replace(
+            '/@endcache\b/',
+            "<?php \$__cacheContent = ob_get_clean();\n"
+            . "if (isset(\$__ml_cache) && \$__cacheContent !== false) { \$__ml_cache->set(\$__cacheKey, \$__cacheContent, \$__cacheTtl ?? null); }\n"
+            . "if (\$__cacheContent !== false) { echo \$__cacheContent; } endif; ?>",
+            $php,
+        );
+    }
+
+    /**
+     * Compile element-level `:if`, `:for`, `:unless` directives.
+     *
+     * Transforms:
+     *   `<div :if="$show">content</div>` → `<?php if ($show): ?><div>content</div><?php endif; ?>`
+     *   `<li :for="$items as $item">{{ $item }}</li>` → foreach wrapping
+     *   `<div :unless="$hidden">content</div>` → `<?php if (!($hidden)): ?><div>...</div><?php endif; ?>`
+     */
+    private function compileElementLevelDirectives(string $php): string
+    {
+        // Strategy: match the full tag with :directive attribute anywhere,
+        // capture the parts before and after the directive attribute separately.
+        // The directive attribute can appear first, last, or in the middle.
+
+        // Helper to build the replacement callback
+        $makeIfCallback = fn(string $prefix) => function (array $m) use ($prefix): string {
+            $tag = $m[1];
+            $allAttrs = $m[2];
+            $condition = $m[3];
+            $content = $m[4];
+            // Remove the :if/unless attr from the attributes string
+            $cleanAttrs = (string) preg_replace('/\s+:(?:if|unless)="[^"]*"/', '', $allAttrs);
+            return "<?php if ({$prefix}{$condition}): ?><{$tag}{$cleanAttrs}>{$content}</{$tag}><?php endif; ?>";
+        };
+
+        $makeSelfClosingIfCallback = fn(string $prefix) => function (array $m) use ($prefix): string {
+            $tag = $m[1];
+            $allAttrs = $m[2];
+            $condition = $m[3];
+            $cleanAttrs = (string) preg_replace('/\s+:(?:if|unless)="[^"]*"/', '', $allAttrs);
+            return "<?php if ({$prefix}{$condition}): ?><{$tag}{$cleanAttrs} /><?php endif; ?>";
+        };
+
+        // :if — opening + closing tag pairs
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:if="([^"]+)"((?:\s+[^>]*?)?)>(.*?)<\/\1>/s',
+            function (array $m): string {
+                $tag = $m[1];
+                $before = $m[2];
+                $cond = $m[3];
+                $after = $m[4];
+                return "<?php if ({$cond}): ?><{$tag}{$before}{$after}>{$m[5]}</{$tag}><?php endif; ?>";
+            },
+            $php,
+        );
+
+        // :if — self-closing tags
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:if="([^"]+)"((?:\s+[^>]*?)?)\s*\/>/s',
+            function (array $m): string {
+                $tag = $m[1];
+                $before = $m[2];
+                $cond = $m[3];
+                $after = $m[4];
+                return "<?php if ({$cond}): ?><{$tag}{$before}{$after} /><?php endif; ?>";
+            },
+            $php,
+        );
+
+        // :unless — opening + closing tag pairs
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:unless="([^"]+)"((?:\s+[^>]*?)?)>(.*?)<\/\1>/s',
+            function (array $m): string {
+                $tag = $m[1];
+                $before = $m[2];
+                $cond = $m[3];
+                $after = $m[4];
+                return "<?php if (!({$cond})): ?><{$tag}{$before}{$after}>{$m[5]}</{$tag}><?php endif; ?>";
+            },
+            $php,
+        );
+
+        // :unless — self-closing tags
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:unless="([^"]+)"((?:\s+[^>]*?)?)\s*\/>/s',
+            function (array $m): string {
+                $tag = $m[1];
+                $before = $m[2];
+                $cond = $m[3];
+                $after = $m[4];
+                return "<?php if (!({$cond})): ?><{$tag}{$before}{$after} /><?php endif; ?>";
+            },
+            $php,
+        );
+
+        // :for — opening + closing tag pairs
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:for="([^"]+)"((?:\s+[^>]*?)?)>(.*?)<\/\1>/s',
+            function (array $m): string {
+                $expr = $m[3];
+                if (preg_match('/^(.*)\s+as\s+(.*)$/i', $expr, $parts)) {
+                    return "<?php \$__currentLoopData = {$parts[1]}; \$this->addLoop(\$__currentLoopData); " .
+                        "foreach(\$__currentLoopData as {$parts[2]}): \$loop = \$this->getLastLoop(); ?>" .
+                        "<{$m[1]}{$m[2]}{$m[4]}>{$m[5]}</{$m[1]}>" .
+                        "<?php \$this->getLastLoop()->tick(); endforeach; \$this->popLoop(); \$loop = \$this->getLastLoop(); ?>";
+                }
+                return $m[0];
+            },
+            $php,
+        );
+
+        // :for — self-closing tags
+        $php = (string) preg_replace_callback(
+            '/<(\w+)((?:\s+[^>]*?)?)\s+:for="([^"]+)"((?:\s+[^>]*?)?)\s*\/>/s',
+            function (array $m): string {
+                $expr = $m[3];
+                if (preg_match('/^(.*)\s+as\s+(.*)$/i', $expr, $parts)) {
+                    return "<?php \$__currentLoopData = {$parts[1]}; \$this->addLoop(\$__currentLoopData); " .
+                        "foreach(\$__currentLoopData as {$parts[2]}): \$loop = \$this->getLastLoop(); ?>" .
+                        "<{$m[1]}{$m[2]}{$m[4]} />" .
+                        "<?php \$this->getLastLoop()->tick(); endforeach; \$this->popLoop(); \$loop = \$this->getLastLoop(); ?>";
+                }
+                return $m[0];
+            },
+            $php,
+        );
+
+        return $php;
     }
 }

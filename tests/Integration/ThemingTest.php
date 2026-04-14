@@ -49,7 +49,7 @@ class ThemingTest extends TestCase
         $this->cleanup($this->tmpDir);
     }
 
-    private function cleanup($dir)
+    private function cleanup(string $dir): void
     {
         if (!is_dir($dir)) return;
         $files = array_diff(scandir($dir), ['.', '..']);
@@ -59,7 +59,7 @@ class ThemingTest extends TestCase
         rmdir($dir);
     }
 
-    public function testSetThemePrecedence()
+    public function testSetThemePrecedence(): void
     {
         // Default view
         file_put_contents($this->tmpDir . '/views/home.ml.php', 'DEFAULT HOME');
@@ -80,7 +80,7 @@ class ThemingTest extends TestCase
         $this->assertEquals('DARK HOME', $this->view->render('home'));
     }
 
-    public function testAddViewPathFallback()
+    public function testAddViewPathFallback(): void
     {
         file_put_contents($this->tmpDir . '/views/only_default.ml.php', 'ONLY DEFAULT');
         
@@ -94,7 +94,7 @@ class ThemingTest extends TestCase
         $this->assertEquals('ONLY EXTRA', $this->view->render('only_extra'));
     }
 
-    public function testNamespaceUsage()
+    public function testNamespaceUsage(): void
     {
         file_put_contents($this->tmpDir . '/custom/widget.ml.php', 'CUSTOM WIDGET');
         
@@ -103,7 +103,7 @@ class ThemingTest extends TestCase
         $this->assertEquals('CUSTOM WIDGET', $this->view->render('custom::widget'));
     }
 
-    public function testNamespaceThemeOverride()
+    public function testNamespaceThemeOverride(): void
     {
         // Packaged view
         file_put_contents($this->tmpDir . '/custom/card.ml.php', 'ORIGINAL CARD');

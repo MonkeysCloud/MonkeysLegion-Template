@@ -32,7 +32,7 @@ class GeneratorLoopTest extends TestCase
         $this->removeDirectory($this->cacheDir);
     }
 
-    public function testForeachWorksWithGenerators()
+    public function testForeachWorksWithGenerators(): void
     {
         file_put_contents($this->viewsDir . '/gen_test.ml.php', '
 @foreach($items as $item)
@@ -59,12 +59,12 @@ class GeneratorLoopTest extends TestCase
         $this->assertStringContainsString('Item: C', $output);
     }
 
-    private function removeDirectory($path)
+    private function removeDirectory(string $path): void
     {
         if (!is_dir($path)) {
             return;
         }
-        $files = glob($path . '/*');
+        $files = glob($path . '/*') ?: [];
         foreach ($files as $file) {
             is_dir($file) ? $this->removeDirectory($file) : unlink($file);
         }

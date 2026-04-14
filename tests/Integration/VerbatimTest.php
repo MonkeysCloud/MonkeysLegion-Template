@@ -15,7 +15,7 @@ class VerbatimTest extends TestCase
         $this->compiler = new Compiler(new Parser());
     }
 
-    public function testVerbatimProtectsRawEchoesAndDirectives()
+    public function testVerbatimProtectsRawEchoesAndDirectives(): void
     {
         $source = <<<'EOT'
 @verbatim

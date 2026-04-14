@@ -459,10 +459,24 @@ class Parser implements ParserInterface
      */
     private function parseSections(string $source): string
     {
-        return (string)preg_replace_callback(
+        // First: handle shorthand @section('name', 'value') — no @endsection needed
+        $source = (string)preg_replace_callback(
+            '/@section\(\s*["\']([^"\']+)["\']\s*,\s*((?:[^()]+|\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\))*)\s*\)/',
+            function (array $m) {
+                $name  = $m[1];
+                $value = trim($m[2]);
+
+                return "\n<?php \$__ml_sections = \$__ml_sections ?? []; ?>\n" .
+                    "<?php \$__ml_sections['{$name}'] = {$value}; ?>\n";
+            },
+            $source
+        );
+
+        // Then: handle block @section('name') ... @endsection
+        $source = (string)preg_replace_callback(
             '/@section\(["\']([^"\']+)["\']\)(.*?)@endsection/s',
             function (array $m) {
-                $name = $m[1];
+                $name    = $m[1];
                 $content = $this->parse($m[2]);
 
                 return "\n<?php \$__ml_sections = \$__ml_sections ?? []; ?>\n" .
@@ -470,6 +484,8 @@ class Parser implements ParserInterface
             },
             $source
         );
+
+        return $source;
     }
 
     /**
@@ -478,10 +494,12 @@ class Parser implements ParserInterface
     private function parseYields(string $source): string
     {
         return (string)preg_replace_callback(
-            '/@yield\(["\']([^"\']+)["\']\)/',
+            '/@yield\(\s*["\']([^"\']+)["\']\s*(?:,\s*((?:[^()]+|\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\))*))?\s*\)/',
             function (array $m) {
-                $name = $m[1];
-                return "<?php echo \$__ml_sections['{$name}'] ?? ''; ?>";
+                $name    = $m[1];
+                $default = isset($m[2]) && trim($m[2]) !== '' ? trim($m[2]) : "''";
+
+                return "<?php echo \$__ml_sections['{$name}'] ?? {$default}; ?>";
             },
             $source
         );

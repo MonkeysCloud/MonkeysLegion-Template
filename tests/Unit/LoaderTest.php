@@ -22,7 +22,7 @@ class LoaderTest extends TestCase
         $this->cleanup($this->tmpDir);
     }
 
-    private function cleanup($dir)
+    private function cleanup(string $dir): void
     {
         if (!is_dir($dir)) return;
         $files = array_diff(scandir($dir), ['.', '..']);
@@ -32,7 +32,7 @@ class LoaderTest extends TestCase
         rmdir($dir);
     }
 
-    public function testResolveSinglePath()
+    public function testResolveSinglePath(): void
     {
         file_put_contents($this->tmpDir . '/views/home.ml.php', 'HOME');
         $loader = new Loader($this->tmpDir . '/views', $this->tmpDir . '/cache');
@@ -41,7 +41,7 @@ class LoaderTest extends TestCase
         $this->assertStringContainsString('views/home.ml.php', $path);
     }
 
-    public function testResolveMultiplePathsFallback()
+    public function testResolveMultiplePathsFallback(): void
     {
         // Structure:
         // /views/default/page.ml.php
@@ -67,7 +67,7 @@ class LoaderTest extends TestCase
         $this->assertStringContainsString('views/default/page.ml.php', $path);
     }
 
-    public function testNamespaces()
+    public function testNamespaces(): void
     {
         $vendorDir = $this->tmpDir . '/vendor/pkg/views';
         mkdir($vendorDir, 0777, true);
@@ -80,7 +80,7 @@ class LoaderTest extends TestCase
         $this->assertStringContainsString('vendor/pkg/views/alert.ml.php', $path);
     }
 
-    public function testNamespaceOverride()
+    public function testNamespaceOverride(): void
     {
         // vendor has alert
         $vendorDir = $this->tmpDir . '/vendor/pkg/views';
