@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template;
 
+use MonkeysLegion\Template\Contracts\CompilerInterface;
+use MonkeysLegion\Template\Contracts\LoaderInterface;
+use MonkeysLegion\Template\Contracts\ParserInterface;
+use MonkeysLegion\Template\Exceptions\ParseException;
 use MonkeysLegion\Template\Exceptions\ViewException;
+use MonkeysLegion\Template\Support\DirectiveRegistry;
 use RuntimeException;
 use Throwable;
 
 final class Renderer
 {
-    private \MonkeysLegion\Template\Contracts\ParserInterface $parser;
-    private \MonkeysLegion\Template\Contracts\CompilerInterface $compiler;
-    private \MonkeysLegion\Template\Contracts\LoaderInterface $loader;
+    private ParserInterface $parser;
+    private CompilerInterface $compiler;
+    private LoaderInterface $loader;
     private bool $cacheEnabled;
     private string $cacheDir;
     private array $pushStacks = [];
@@ -20,27 +25,32 @@ final class Renderer
     private array $onceHashes = [];
     private array $stackPlaceholders = [];
     private array $loopStack = [];
+    private array $sections = [];
     public function __construct(
-        \MonkeysLegion\Template\Contracts\ParserInterface $parser,
-        \MonkeysLegion\Template\Contracts\CompilerInterface $compiler,
-        \MonkeysLegion\Template\Contracts\LoaderInterface $loader,
+        ParserInterface $parser,
+        CompilerInterface $compiler,
+        LoaderInterface $loader,
         bool $cacheEnabled = true,
         string $cacheDir = '',
-        private ?\MonkeysLegion\Template\Support\DirectiveRegistry $registry = null
+        private ?DirectiveRegistry $registry = null
     ) {
         $this->parser       = $parser;
         $this->compiler     = $compiler;
         $this->loader       = $loader;
         $this->cacheEnabled = $cacheEnabled;
-        $this->registry     = $registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
+        $this->registry     = $registry ?? new DirectiveRegistry();
         $this->cacheDir     = $cacheDir !== ''
             ? rtrim($cacheDir, DIRECTORY_SEPARATOR)
             : (function_exists('base_path') ?
                 call_user_func('base_path', 'var/cache/views') : sys_get_temp_dir() . '/monkeyslegion/views');
     }
 
-    public function render(string $__name, array $__data = []): string
+    public function render(string $__name, array $__data = [], bool $isInternal = false): string
     {
+        if (!$isInternal) {
+            $this->sections = [];
+        }
+
         try {
             $scope = new VariableScope($__data);
             VariableScope::setCurrent($scope);
@@ -55,75 +65,16 @@ final class Renderer
                 throw new RuntimeException("Failed to read template source: {$__sourcePath}");
             }
 
-            [$__raw, $sections] = $this->extractSections($__raw);
-
-            if (isset($sections['__extends'])) {
-                $parentName = $sections['__extends'];
-
-                $parentPath = $this->loader->getSourcePath($parentName);
-                if (!is_file($parentPath)) {
-                    throw new RuntimeException("Parent template not found: {$parentPath}");
-                }
-
-                $parentRaw = file_get_contents($parentPath);
-                if ($parentRaw === false) {
-                    throw new RuntimeException("Failed to read parent template: {$parentPath}");
-                }
-
-                $__raw = $this->replaceYields($parentRaw, $sections);
-            }
-
             $__compiledPath = $this->getCompiledPath($__name, $__sourcePath);
 
-            if ($this->cacheEnabled) {
+            // Compile if cache is disabled or expired
+            if (!$this->cacheEnabled || !is_file($__compiledPath) || filemtime($__sourcePath) > filemtime($__compiledPath)) {
                 if (!is_dir($this->cacheDir)) {
                     mkdir($this->cacheDir, 0755, true);
                 }
-
-                if (
-                    !is_file($__compiledPath)
-                    || filemtime($__sourcePath) > filemtime($__compiledPath)
-                ) {
-                    $php = $this->compiler->compile($__raw, $__sourcePath);
-                    file_put_contents($__compiledPath, $php);
-                }
-
-                $level = ob_get_level();
-                ob_start();
-
-                try {
-                    $GLOBALS['__data']     = $scope->getCurrentScope();
-                    $GLOBALS['__ml_attrs'] = [];
-                    extract($scope->getCurrentScope(), EXTR_SKIP);
-                    if (!isset($slots)) {
-                        $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
-                    }
-
-                    include $__compiledPath;
-                    $__templateOutput = ob_get_clean();
-
-                    if ($__templateOutput === false) {
-                        throw new RuntimeException(sprintf(
-                            'Renderer buffer was closed while rendering view [%s].',
-                            $__name
-                        ));
-                    }
-
-                    return $this->replaceStackPlaceholders($__templateOutput);
-                } catch (Throwable $e) {
-                    $this->handleViewException($e, $level);
-                    throw $e;
-                } finally {
-                    unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-                }
+                $php = $this->compiler->compile($__raw, $__sourcePath);
+                file_put_contents($__compiledPath, $php);
             }
-
-            $php = $this->compiler->compile($__raw, $__sourcePath);
-            if (!is_dir($this->cacheDir)) {
-                mkdir($this->cacheDir, 0755, true);
-            }
-            $tmpCompiledPath = $__compiledPath;
-            file_put_contents($tmpCompiledPath, $php);
 
             $level = ob_get_level();
             ob_start();
@@ -131,31 +82,39 @@ final class Renderer
             try {
                 $GLOBALS['__data']     = $scope->getCurrentScope();
                 $GLOBALS['__ml_attrs'] = [];
+                $__ml_sections = &$this->sections;
+                $__ml_scope = &$scope;
+
                 extract($scope->getCurrentScope(), EXTR_SKIP);
                 if (!isset($slots)) {
                     $slots = \MonkeysLegion\Template\Support\SlotCollection::fromArray([]);
                 }
 
-                include $tmpCompiledPath;
+                include $__compiledPath;
+
                 $__templateOutput = ob_get_clean();
 
                 if ($__templateOutput === false) {
-                    throw new RuntimeException(sprintf(
-                        'Renderer buffer was closed while rendering view [%s] (no-cache).',
-                        $__name
-                    ));
+                    throw new RuntimeException(sprintf('Renderer buffer closed for [%s].', $__name));
+                }
+
+                if (isset($__ml_extends) && $__ml_extends !== null) {
+                    return $this->render(str_replace('/', '.', $__ml_extends), $__data, true);
                 }
 
                 return $this->replaceStackPlaceholders($__templateOutput);
-            } catch (Throwable $e) {
-                $this->handleViewException($e, $level);
-                throw $e;
             } finally {
+                // Ensure the output buffer is cleaned up even if an exception occurs
+                while (ob_get_level() > $level) {
+                    ob_end_clean();
+                }
+
                 unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
-                @unlink($tmpCompiledPath);
+                if (!$this->cacheEnabled) {
+                    @unlink($__compiledPath);
+                }
             }
         } catch (Throwable $e) {
-            unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
             throw $e;
         }
     }
@@ -194,23 +153,13 @@ final class Renderer
             $passedAttrs = $__data;
             unset($passedAttrs['slots']);
 
-            // Instantiate AttributeBag with passed attributes
             $attributeBag = new \MonkeysLegion\Template\Support\AttributeBag($passedAttrs);
             $passedAttrs['attributes'] = $attributeBag;
 
             $scope->createIsolatedScope($passedAttrs, $props);
             $__compiledPath = $this->getCompiledPathForComponent($__path);
 
-            if ($this->cacheEnabled) {
-                if (!is_dir($this->cacheDir)) {
-                    mkdir($this->cacheDir, 0755, true);
-                }
-                if (!is_file($__compiledPath) || filemtime($__path) > filemtime($__compiledPath)) {
-                    $cleanSource = $this->parser->removePropsDirectives($__source);
-                    $php = $this->compiler->compile($cleanSource, $__path);
-                    file_put_contents($__compiledPath, $php);
-                }
-            } else {
+            if (!$this->cacheEnabled || !is_file($__compiledPath) || filemtime($__path) > filemtime($__compiledPath)) {
                 if (!is_dir($this->cacheDir)) {
                     mkdir($this->cacheDir, 0755, true);
                 }
@@ -222,7 +171,7 @@ final class Renderer
             $scopedData = $scope->getCurrentScope();
             $scopedData['slots'] = $slots;
             $scopedData['slot']  = $slots->getDefault();
-            // Ensure $attrs is available as an alias for $attributes
+            $__ml_scope = &$scope;
             if (isset($scopedData['attributes'])) {
                 $scopedData['attrs'] = $scopedData['attributes'];
             }
@@ -232,13 +181,15 @@ final class Renderer
 
             $output = ob_get_clean();
             if ($output === false) {
-                throw new RuntimeException("Component buffer closed unexpectedly: {$__path}");
+                throw new RuntimeException("Component buffer closed: {$__path}");
             }
             return $output;
-        } catch (Throwable $e) {
-            $this->handleViewException($e, $level);
-            throw $e;
         } finally {
+            // Ensure the output buffer is cleaned up even if an exception occurs
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+
             if (isset($scope)) {
                 $scope->popScope();
             }
@@ -270,29 +221,6 @@ final class Renderer
         return $this->cacheDir . DIRECTORY_SEPARATOR . $file;
     }
 
-    private function extractSections(string $source): array
-    {
-        $sections = [];
-        if (preg_match('/@extends\((?:\'|")(?<view>.+?)(?:\'|")\)/', $source, $m)) {
-            $sections['__extends'] = $m['view'];
-            $source = (string)preg_replace('/@extends\((?:\'|").+?(?:\'|")\)/', '', $source, 1);
-        }
-        $sectionPattern = '/@section\((?:\'|")(?<name>.+?)(?:\'|")\)(?<content>.*?)@endsection/s';
-        $source = (string)preg_replace_callback($sectionPattern, function (array $m) use (&$sections) {
-            $sections[$m['name']] = $m['content'];
-            return '';
-        }, $source);
-        return [(string)$source, $sections];
-    }
-
-    private function replaceYields(string $source, array $sections): string
-    {
-        $pattern = '/@yield\((?:\'|")(?<section>.+?)(?:\'|")\)/';
-        return (string)preg_replace_callback($pattern, function (array $m) use ($sections) {
-            $sectionName = $m['section'];
-            return $sections[$sectionName] ?? '';
-        }, $source);
-    }
     public function startPush(string $section): void {
         ob_start();
         $this->pushStacks[$section][] = '__PUSH_START__';
@@ -355,75 +283,13 @@ final class Renderer
         return end($this->loopStack) ?: null;
     }
 
-    /**
-     * @return never
-     */
-    private function handleViewException(Throwable $e, int $level): void
-    {
-        while (ob_get_level() > $level) {
-            ob_end_clean();
-        }
 
-        if ($e instanceof \MonkeysLegion\Template\Exceptions\ViewException) {
-            throw $e;
-        }
-
-        $exceptionFile = $e->getFile();
-        $exceptionLine = $e->getLine();
-
-        if (is_file($exceptionFile)) {
-            $handle = fopen($exceptionFile, 'r');
-            if ($handle) {
-                $header = fread($handle, 512);
-                fclose($handle);
-
-                // Safe construction
-                $pathStartMarker = '/' . '**PATH ';
-                $pathEndMarker = ' ENDPATH**' . '/';
-
-                $startPos = strpos($header, $pathStartMarker);
-
-                if ($startPos !== false) {
-                    $startPos += strlen($pathStartMarker);
-                    $endPos = strpos($header, $pathEndMarker, $startPos);
-
-                    if ($endPos !== false) {
-                        $originalPath = substr($header, $startPos, $endPos - $startPos);
-                        $mapOffset = 2; // Default
-
-                        // Check for attribute bag usage
-                        if (str_contains($header, 'AttributeBag;') && str_contains($header, '?>')) {
-                            $mapOffset = 4;
-                        }
-
-                        $originalLine = max(1, $exceptionLine - $mapOffset);
-
-                        throw new \MonkeysLegion\Template\Exceptions\ViewException(
-                            $e->getMessage() . " (View: " . basename($originalPath) . ")",
-                            0,
-                            1,
-                            $originalPath,
-                            $originalLine,
-                            $e
-                        );
-                    }
-                }
-            }
-        }
-
-        throw new RuntimeException(
-            "Error rendering template: " . $e->getMessage(),
-            0,
-            $e
-        );
-    }
-
-    public function getRegistry(): \MonkeysLegion\Template\Support\DirectiveRegistry
+    public function getRegistry(): DirectiveRegistry
     {
         return $this->registry;
     }
 
-    public function setRegistry(\MonkeysLegion\Template\Support\DirectiveRegistry $registry): void
+    public function setRegistry(DirectiveRegistry $registry): void
     {
         $this->registry = $registry;
     }

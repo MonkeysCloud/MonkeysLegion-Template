@@ -98,7 +98,48 @@ EOT;
 EOT;
         $parsed = $this->parser->parse($source);
 
-        $this->assertStringContainsString("\$__component_slots['header'] = function() {", $parsed);
+        $this->assertStringContainsString("\$__component_slots['header'] = function() use (\$__ml_slot_scope) {", $parsed);
         $this->assertStringContainsString("Header Content", $parsed);
+    }
+
+    public function testItDetectsMismatchedTags(): void
+    {
+        $source = <<<'EOT'
+<x-alert>
+    Content
+</x-card>
+EOT;
+        $this->expectException(\MonkeysLegion\Template\Exceptions\ParseException::class);
+        $this->expectExceptionMessage('Mismatched component tags');
+        
+        $this->parser->parse($source);
+    }
+
+    public function testComponentSlotsProtection(): void
+    {
+        $source = '<x-button slots="malicious-string" />';
+        $parsed = $this->parser->parse($source);
+
+        // It should explicitly overwrite the slots key
+        $this->assertStringContainsString("\$__component_attrs['slots'] =", $parsed);
+    }
+
+    public function testItDetectsMismatchedSections(): void
+    {
+        $source = <<<'EOT'
+@section('main')
+    Content
+@endsection
+EOT;
+        // Should pass
+        $this->parser->parse($source);
+
+        $source = <<<'EOT'
+@section('main')
+    Content
+EOT;
+        $this->expectException(\MonkeysLegion\Template\Exceptions\ParseException::class);
+        $this->expectExceptionMessage('Unclosed tag found: [@section]');
+        $this->parser->parse($source);
     }
 }

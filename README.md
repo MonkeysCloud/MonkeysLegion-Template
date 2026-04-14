@@ -477,6 +477,15 @@ $view = new MLView($path, ['strict_mode' => true]);
 
 When enabled, any `{!! $var !!}` usage will trigger a user warning unless explicitly approved via `@escape('raw', $var)`.
 
+### Compiler Linting
+
+By default, the `Compiler` lints generated PHP code using `php -l` to catch syntax errors during the build phase. In environments where `exec()` is disabled or for maximum performance, this can be toggled:
+
+```php
+$compiler = new Compiler($parser);
+$compiler->setEnableLinting(false); // Disable compile-time linting
+```
+
 ### Custom Directives
 
 Extend the compiler with your own directives:
@@ -565,6 +574,15 @@ The linter scans your templates for:
 ```
 
 If any errors are found, the command exits with a non-zero status code, making it suitable for CI/CD pipelines.
+
+## 16 · Hardening & Portability
+
+MLView is built for professional, environment-agnostic deployment:
+
+- **Environment-Aware Linting**: Safeguards against disabled `exec()` calls on shared hosting while maintaining compile-time PHP syntax checks via `PHP_BINARY`.
+- **Stack-Based Validation**: High-integrity parsing ensures that components, slots, and sections are perfectly balanced and correctly nested before compilation.
+- **Exception-Safe Buffering**: Robust output buffer management ensures that template errors or fatal exceptions never leak buffer levels, maintaining application stability.
+- **Scope Snapshotting**: Slots automatically capture a static snapshot of parent variables at the moment of definition, ensuring predictable behavior in deeply nested components.
 
 ### Compatibility
 
