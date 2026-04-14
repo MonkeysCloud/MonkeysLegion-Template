@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Template\Exceptions;
 
-use ErrorException;
+use RuntimeException;
 use Throwable;
 
-class ViewException extends ErrorException
+class ViewException extends RuntimeException
 {
     public function __construct(
         string $message,
@@ -17,7 +17,10 @@ class ViewException extends ErrorException
         int $line = __LINE__,
         ?Throwable $previous = null
     ) {
-        parent::__construct($message, $code, $severity, $filename, $line, $previous);
+        parent::__construct($message, $code, $previous);
+        
+        $this->file = $filename;
+        $this->line = $line;
     }
 
     /**

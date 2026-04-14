@@ -83,6 +83,7 @@ final class Renderer
                 $GLOBALS['__data']     = $scope->getCurrentScope();
                 $GLOBALS['__ml_attrs'] = [];
                 $__ml_sections = &$this->sections;
+                $__ml_scope = &$scope;
 
                 extract($scope->getCurrentScope(), EXTR_SKIP);
                 if (!isset($slots)) {
@@ -103,6 +104,11 @@ final class Renderer
 
                 return $this->replaceStackPlaceholders($__templateOutput);
             } finally {
+                // Ensure the output buffer is cleaned up even if an exception occurs
+                while (ob_get_level() > $level) {
+                    ob_end_clean();
+                }
+
                 unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
                 if (!$this->cacheEnabled) {
                     @unlink($__compiledPath);
@@ -165,6 +171,7 @@ final class Renderer
             $scopedData = $scope->getCurrentScope();
             $scopedData['slots'] = $slots;
             $scopedData['slot']  = $slots->getDefault();
+            $__ml_scope = &$scope;
             if (isset($scopedData['attributes'])) {
                 $scopedData['attrs'] = $scopedData['attributes'];
             }
@@ -178,6 +185,11 @@ final class Renderer
             }
             return $output;
         } finally {
+            // Ensure the output buffer is cleaned up even if an exception occurs
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+
             if (isset($scope)) {
                 $scope->popScope();
             }

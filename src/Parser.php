@@ -56,36 +56,127 @@ class Parser implements ParserInterface
      */
     private function validateStructure(string $source): void
     {
-        // 1) Component Tag Balance
-        // Match <x-name... excluding self-closing <x-name.../>
-        preg_match_all('/<x-([a-zA-Z0-9_:.-]+)(?:[^>]*)(?<!\/)>/s', $source, $openTags, PREG_OFFSET_CAPTURE);
-        preg_match_all('/<\/x-([a-zA-Z0-9_:.-]+)>/s', $source, $closeTags, PREG_OFFSET_CAPTURE);
+        $tags = [];
 
-        if (\count($openTags[0]) !== \count($closeTags[0])) {
-            $offset = \count($openTags[0]) > \count($closeTags[0]) 
-                ? (end($openTags[0])[1] ?? 0) 
-                : (end($closeTags[0])[1] ?? 0);
-            $line = \count(explode("\n", substr($source, 0, (int)$offset)));
-
-            throw new \MonkeysLegion\Template\Exceptions\ParseException(
-                "Mismatched component tags. Found " . count($openTags[0]) . " open and " . count($closeTags[0]) . " close tags.",
-                'template.ml.php',
-                $line
-            );
+        // 1) Collect all opening tags <x-name...> (excluding self-closing)
+        if (preg_match_all('/<x-([a-zA-Z0-9_:.-]+)(?:[^>]*)(?<!\/)>/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[1] as $idx => $match) {
+                $tags[] = ['type' => 'open', 'name' => $match[0], 'offset' => $matches[0][$idx][1]];
+            }
         }
 
-        // 2) Slot Directive Balance (@slot/@endslot)
-        preg_match_all('/\@slot\b/s', $source, $openSlots, PREG_OFFSET_CAPTURE);
-        preg_match_all('/\@endslot\b/s', $source, $closeSlots, PREG_OFFSET_CAPTURE);
+        // 2) Collect all closing tags </x-name>
+        if (preg_match_all('/<\/x-([a-zA-Z0-9_:.-]+)>/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[1] as $idx => $match) {
+                $tags[] = ['type' => 'close', 'name' => $match[0], 'offset' => $matches[0][$idx][1]];
+            }
+        }
 
-        if (\count($openSlots[0]) !== \count($closeSlots[0])) {
-            $offset = \count($openSlots[0]) > \count($closeSlots[0]) 
-                ? (end($openSlots[0])[1] ?? 0) 
-                : (end($closeSlots[0])[1] ?? 0);
-            $line = \count(explode("\n", substr($source, 0, (int)$offset)));
+        // 3) Collect all @slot
+        if (preg_match_all('/\@slot\b/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $tags[] = ['type' => 'open_slot', 'name' => '@slot', 'offset' => $match[1]];
+            }
+        }
 
+        // 4) Collect all @endslot
+        if (preg_match_all('/\@endslot\b/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $tags[] = ['type' => 'close_slot', 'name' => '@endslot', 'offset' => $match[1]];
+            }
+        }
+
+        // 5) Collect all @section (block form only)
+        // Match @section followed by ( but NOT @section(name, value) shorthand
+        if (preg_match_all('/\@section\s*\(\s*[\'"][^\'"]+[\'"]\s*(?!\s*,)/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $tags[] = ['type' => 'open_section', 'name' => '@section', 'offset' => $match[1]];
+            }
+        }
+
+        // 6) Collect all @endsection
+        if (preg_match_all('/\@endsection\b/s', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $tags[] = ['type' => 'close_section', 'name' => '@endsection', 'offset' => $match[1]];
+            }
+        }
+
+        // Sort tags by offset
+        usort($tags, fn($a, $b) => $a['offset'] <=> $b['offset']);
+
+        $stack = [];
+
+        foreach ($tags as $tag) {
+            if ($tag['type'] === 'open' || $tag['type'] === 'open_slot' || $tag['type'] === 'open_section') {
+                $stack[] = $tag;
+                continue;
+            }
+
+            // We found a closing tag
+            if (empty($stack)) {
+                $line = count(explode("\n", substr($source, 0, (int)$tag['offset'])));
+                throw new \MonkeysLegion\Template\Exceptions\ParseException(
+                    "Unexpected closing tag [{$tag['name']}]. No matching opening tag found.",
+                    'template.ml.php',
+                    $line
+                );
+            }
+
+            $last = array_pop($stack);
+
+            // Verify names match for components
+            if ($tag['type'] === 'close' && $last['type'] === 'open' && $tag['name'] !== $last['name']) {
+                $line = count(explode("\n", substr($source, 0, (int)$tag['offset'])));
+                throw new \MonkeysLegion\Template\Exceptions\ParseException(
+                    "Mismatched component tags. Found </x-{$tag['name']}>, but expected </x-{$last['name']}>.",
+                    'template.ml.php',
+                    $line
+                );
+            }
+
+            // Verify directive matches for slots
+            if ($tag['type'] === 'close_slot' && $last['type'] !== 'open_slot') {
+                $line = count(explode("\n", substr($source, 0, (int)$tag['offset'])));
+                throw new \MonkeysLegion\Template\Exceptions\ParseException(
+                    "Unexpected @endslot found. Expected closing for current open item [{$last['name']}].",
+                    'template.ml.php',
+                    $line
+                );
+            }
+
+            // Verify directive matches for sections
+            if ($tag['type'] === 'close_section' && $last['type'] !== 'open_section') {
+                $line = count(explode("\n", substr($source, 0, (int)$tag['offset'])));
+                throw new \MonkeysLegion\Template\Exceptions\ParseException(
+                    "Unexpected @endsection found. Expected closing for current open item [{$last['name']}].",
+                    'template.ml.php',
+                    $line
+                );
+            }
+            
+            if ($tag['type'] === 'close' && ($last['type'] === 'open_slot' || $last['type'] === 'open_section')) {
+                 $line = count(explode("\n", substr($source, 0, (int)$tag['offset'])));
+                 throw new \MonkeysLegion\Template\Exceptions\ParseException(
+                    "Unexpected </x-{$tag['name']}> found. Current block [{$last['name']}] must be closed first.",
+                    'template.ml.php',
+                    $line
+                );
+            }
+        }
+
+        // Check for unclosed tags
+        if (!empty($stack)) {
+            $last = end($stack);
+            $line = count(explode("\n", substr($source, 0, (int)$last['offset'])));
+            $name = match($last['type']) {
+                'open' => "<x-{$last['name']}>",
+                'open_slot' => "@slot",
+                'open_section' => "@section",
+                default => $last['name']
+            };
+            
             throw new \MonkeysLegion\Template\Exceptions\ParseException(
-                "Mismatched @slot directives. Found " . count($openSlots[0]) . " @slot and " . count($closeSlots[0]) . " @endslot.",
+                "Unclosed tag found: [{$name}] was never closed.",
                 'template.ml.php',
                 $line
             );
@@ -311,8 +402,8 @@ class Parser implements ParserInterface
         // Inner content is not parsed here; the main Parser loop will handle nesting
         $innerParsed = $inner;
 
-        $setupReplacement = "<?php /* Component: {$name} */ \$__component_attrs = {$attrsCode}; \$__component_content = ''; " .
-                 ($selfClosing ? "echo \$this->renderComponent(\$this->resolveComponent('{$name}'), \$__component_attrs + ['slots' => \\MonkeysLegion\\Template\\Support\\SlotCollection::fromArray(['__default' => ''])]); " : "ob_start(); ") .
+        $setupReplacement = "<?php /* Component: {$name} */ \$__component_attrs = {$attrsCode}; " .
+                 ($selfClosing ? "\$__component_attrs['slots'] = \\MonkeysLegion\\Template\\Support\\SlotCollection::fromArray(['__default' => '']); echo \$this->renderComponent(\$this->resolveComponent('{$name}'), \$__component_attrs); " : "ob_start(); ") .
                  "?>";
         
         $setup = $setupReplacement . str_repeat("\n", $openTagLines);
@@ -412,8 +503,10 @@ class Parser implements ParserInterface
                 $slot = $m[2];
                 $body = $m[3];
 
-                $openTag = "<?php \$__component_slots = \$__component_slots ?? []; \$__component_slots['{$slot}'] = function() use (&\$__ml_scope) { " .
-                    "\$__slot_data = \$__ml_scope->getCurrentScope(); extract(\$__slot_data); ob_start(); ?>" . str_repeat("\n", substr_count($m[1], "\n"));
+                $openTag = "<?php \$__component_slots = \$__component_slots ?? []; " .
+                    "\$__ml_slot_scope = array_merge((isset(\$__ml_scope) ? \$__ml_scope->getCurrentScope() : []), get_defined_vars()); " .
+                    "\$__component_slots['{$slot}'] = function() use (\$__ml_slot_scope) { " .
+                    "extract(\$__ml_slot_scope); ob_start(); ?>" . str_repeat("\n", substr_count($m[1], "\n"));
                 
                 $closeTag = "<?php return ob_get_clean(); }; ?>" . str_repeat("\n", substr_count($m[4], "\n"));
 
@@ -437,8 +530,10 @@ class Parser implements ParserInterface
                 $openLines = substr_count($m[1], "\n");
                 $closeLines = substr_count($m[5], "\n");
 
-                $openTag = "<?php \$__component_slots = \$__component_slots ?? []; \$__component_slots['{$slot}'] = function() { " .
-                    "if (isset(\$GLOBALS['__data']) && is_array(\$GLOBALS['__data'])) { extract(\$GLOBALS['__data'], EXTR_SKIP); } ob_start(); ?> " . str_repeat("\n", $openLines);
+                $openTag = "<?php \$__component_slots = \$__component_slots ?? []; " .
+                    "\$__ml_slot_scope = array_merge((isset(\$__ml_scope) ? \$__ml_scope->getCurrentScope() : []), get_defined_vars()); " .
+                    "\$__component_slots['{$slot}'] = function() use (\$__ml_slot_scope) { " .
+                    "extract(\$__ml_slot_scope); ob_start(); ?> " . str_repeat("\n", $openLines);
                 
                 $closeTag = "<?php return ob_get_clean(); }; ?>" . str_repeat("\n", $closeLines);
 

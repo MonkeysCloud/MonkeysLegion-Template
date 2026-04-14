@@ -38,6 +38,7 @@ use MonkeysLegion\Template\Exceptions\ParseException;
 class Compiler implements CompilerInterface
 {
     private bool $strictMode = false;
+    private bool $enableLinting = true;
     private \MonkeysLegion\Template\Support\DirectiveRegistry $registry;
 
     public function __construct(
@@ -55,6 +56,11 @@ class Compiler implements CompilerInterface
     public function setStrictMode(bool $enable): void
     {
         $this->strictMode = $enable;
+    }
+
+    public function setEnableLinting(bool $enable): void
+    {
+        $this->enableLinting = $enable;
     }
 
     /**
@@ -160,41 +166,58 @@ class Compiler implements CompilerInterface
      */
     private function validateCompiledSyntax(string $php, string $path): void
     {
-        // Skip validation if we don't have shell access or if we want to be fast?
-        // Actually, for compilation it's worth it.
+        if (!$this->enableLinting || !function_exists('exec')) {
+            return;
+        }
         
         // We use a temporary file to lint the code safely
-        $tmpFile = tempnam(sys_get_temp_dir(), 'ml_lint_');
-        file_put_contents($tmpFile, $php);
-
-        $output = [];
-        $returnVar = 0;
-        // Run php -l (lint)
-        exec("php -l " . escapeshellarg($tmpFile) . " 2>&1", $output, $returnVar);
+        $tmpDir = sys_get_temp_dir();
+        $tmpFile = tempnam($tmpDir, 'ml_lint_');
         
-        unlink($tmpFile);
+        if ($tmpFile === false) {
+            return; // Fail gracefully if we can't create a temp file
+        }
 
-        if ($returnVar !== 0) {
-            $message = $output[0] ?? 'Unknown PHP syntax error';
+        try {
+            if (file_put_contents($tmpFile, $php) === false) {
+                return;
+            }
+
+            $output = [];
+            $returnVar = 0;
             
-            // Extract line number from "Errors parsing ... on line X"
-            if (preg_match('/on line (\d+)/', $message, $m)) {
-                $errorLine = (int)$m[1];
-                // Map back using our fixed 4-line header
-                $originalLine = max(1, $errorLine - 4);
+            // Use PHP_BINARY to ensure we use the same PHP version as the runner
+            $phpBinary = (defined('PHP_BINARY') && PHP_BINARY) ? PHP_BINARY : 'php';
+            
+            // Run php -l (lint)
+            exec(escapeshellcmd($phpBinary) . " -l " . escapeshellarg($tmpFile) . " 2>&1", $output, $returnVar);
+
+            if ($returnVar !== 0) {
+                $message = $output[0] ?? 'Unknown PHP syntax error';
                 
+                // Extract line number from "Errors parsing ... on line X"
+                if (preg_match('/on line (\d+)/', $message, $m)) {
+                    $errorLine = (int)$m[1];
+                    // Map back using our fixed 4-line header
+                    $originalLine = max(1, $errorLine - 4);
+                    
+                    throw new ParseException(
+                        "PHP Syntax Error: " . $message . " in " . basename($path),
+                        $path,
+                        $originalLine
+                    );
+                }
+
                 throw new ParseException(
                     "PHP Syntax Error: " . $message . " in " . basename($path),
                     $path,
-                    $originalLine
+                    1
                 );
             }
-
-            throw new ParseException(
-                "PHP Syntax Error: " . $message . " in " . basename($path),
-                $path,
-                1
-            );
+        } finally {
+            if (file_exists($tmpFile)) {
+                unlink($tmpFile);
+            }
         }
     }
 
@@ -650,13 +673,11 @@ class Compiler implements CompilerInterface
     /**
      * Compile control structures (if, elseif, else, endif).
      *
-     * We only compile directives that appear standalone on their own line:
+     * Supports both standalone and inline usage:
      *   `@if(...)`
      *   `@elseif(...)`
      *   `@else`
      *   `@endif`
-     *
-     * This avoids the nested-parentheses bug and stray ")" characters.
      */
     private function compileConditionals(string $php): string
     {
@@ -665,23 +686,23 @@ class Compiler implements CompilerInterface
 
         // @if (condition)
         $php = (string)preg_replace_callback(
-            "/@if\b{$expr}/sx",
+            "/(?<!@)@if\b{$expr}/sx",
             fn($m) => "<?php if ({$m[1]}): ?>",
             $php
         );
 
         // @elseif (condition)
         $php = (string)preg_replace_callback(
-            "/@elseif\b{$expr}/sx",
+            "/(?<!@)@elseif\b{$expr}/sx",
             fn($m) => "<?php elseif ({$m[1]}): ?>",
             $php
         );
 
         // @else
-        $php = (string)preg_replace('/@else\b/', '<?php else: ?>', $php);
+        $php = (string)preg_replace('/(?<!@)@else\b/', '<?php else: ?>', $php);
 
         // @endif
-        $php = (string)preg_replace('/@endif\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace('/(?<!@)@endif\b/', '<?php endif; ?>', $php);
 
         return $php;
     }
@@ -695,27 +716,27 @@ class Compiler implements CompilerInterface
         $expr = '\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)';
 
         // @unless(cond) -> if (! (cond))
-        $php = (string)preg_replace_callback("/@unless\b{$expr}/sx", fn($m) => "<?php if (! ({$m[1]})): ?>", $php);
-        $php = (string)preg_replace('/@endunless\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace_callback("/(?<!@)@unless\b{$expr}/sx", fn($m) => "<?php if (! ({$m[1]})): ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endunless\b/', '<?php endif; ?>', $php);
 
         // @isset(var) -> if (isset(var))
-        $php = (string)preg_replace_callback("/@isset\b{$expr}/sx", fn($m) => "<?php if (isset({$m[1]})): ?>", $php);
-        $php = (string)preg_replace('/@endisset\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace_callback("/(?<!@)@isset\b{$expr}/sx", fn($m) => "<?php if (isset({$m[1]})): ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endisset\b/', '<?php endif; ?>', $php);
 
         // @empty(var) -> if (empty(var))
-        $php = (string)preg_replace_callback("/@empty\b{$expr}/sx", fn($m) => "<?php if (empty({$m[1]})): ?>", $php);
-        $php = (string)preg_replace('/@endempty\b/', '<?php endif; ?>', $php);
+        $php = (string)preg_replace_callback("/(?<!@)@empty\b{$expr}/sx", fn($m) => "<?php if (empty({$m[1]})): ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endempty\b/', '<?php endif; ?>', $php);
 
         // @switch($var)
-        $php = (string)preg_replace_callback("/\s*@switch\b{$expr}/sx", fn($m) => "<?php switch({$m[1]}): ?>", $php);
-        $php = (string)preg_replace('/@endswitch\b/', '<?php endswitch; ?>', $php);
+        $php = (string)preg_replace_callback("/\s*(?<!@)@switch\b{$expr}/sx", fn($m) => "<?php switch({$m[1]}): ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endswitch\b/', '<?php endswitch; ?>', $php);
 
         // @case('val') - strip leading whitespace to avoid T_INLINE_HTML
-        $php = (string)preg_replace('/\s*@case\b\s*\((.*?)\)/s', '<?php case $1: ?>', $php);
-        $php = (string)preg_replace('/\s*@default\b/', '<?php default: ?>', $php);
+        $php = (string)preg_replace('/\s*(?<!@)@case\b\s*\((.*?)\)/s', '<?php case $1: ?>', $php);
+        $php = (string)preg_replace('/\s*(?<!@)@default\b/', '<?php default: ?>', $php);
 
         // @break - must be in PHP mode
-        $php = (string)preg_replace('/@break\b/', '<?php break; ?>', $php);
+        $php = (string)preg_replace('/(?<!@)@break\b/', '<?php break; ?>', $php);
 
         return $php;
     }
@@ -753,7 +774,7 @@ class Compiler implements CompilerInterface
             return "<?php for ({$m[1]}): ?>" . str_repeat("\n", substr_count($m[0], "\n"));
         }, $php);
         
-        $php = (string)preg_replace_callback('/@endfor\b/s', function($m) {
+        $php = (string)preg_replace_callback('/(?<!@)@endfor\b/s', function($m) {
             return "<?php endfor; ?>" . str_repeat("\n", substr_count($m[0], "\n"));
         }, $php);
 
@@ -762,13 +783,13 @@ class Compiler implements CompilerInterface
             return "<?php while ({$m[1]}): ?>" . str_repeat("\n", substr_count($m[0], "\n"));
         }, $php);
         
-        $php = (string)preg_replace_callback('/@endwhile\b/s', function($m) {
+        $php = (string)preg_replace_callback('/(?<!@)@endwhile\b/s', function($m) {
             return "<?php endwhile; ?>" . str_repeat("\n", substr_count($m[0], "\n"));
         }, $php);
 
         // Loop control
-        $php = (string)preg_replace('/@break\b/', '<?php break; ?>', $php);
-        $php = (string)preg_replace('/@continue\b/', '<?php continue; ?>', $php);
+        $php = (string)preg_replace('/(?<!@)@break\b/', '<?php break; ?>', $php);
+        $php = (string)preg_replace('/(?<!@)@continue\b/', '<?php continue; ?>', $php);
 
         return $php;
     }
@@ -801,26 +822,26 @@ class Compiler implements CompilerInterface
     {
         // @stack('name') -> yieldPush('name')
         $php = (string)preg_replace_callback(
-            '/@stack\([\'"](.+?)[\'"]\)/',
+            '/(?<!@)@stack\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?= \$this->yieldPush('{$m[1]}') ?>",
             $php
         );
 
         // @push('name')
         $php = (string)preg_replace_callback(
-            '/@push\([\'"](.+?)[\'"]\)/',
+            '/(?<!@)@push\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?php \$this->startPush('{$m[1]}'); ?>",
             $php
         );
-        $php = (string)preg_replace('/@endpush\b/', "<?php \$this->stopPush(); ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endpush\b/', "<?php \$this->stopPush(); ?>", $php);
 
         // @prepend('name')
         $php = (string)preg_replace_callback(
-            '/@prepend\([\'"](.+?)[\'"]\)/',
+            '/(?<!@)@prepend\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?php \$this->startPrepend('{$m[1]}'); ?>",
             $php
         );
-        $php = (string)preg_replace('/@endprepend\b/', "<?php \$this->stopPrepend(); ?>", $php);
+        $php = (string)preg_replace('/(?<!@)@endprepend\b/', "<?php \$this->stopPrepend(); ?>", $php);
 
         return $php;
     }
