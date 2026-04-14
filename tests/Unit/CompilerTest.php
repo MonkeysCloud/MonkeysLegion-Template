@@ -75,7 +75,7 @@ EOT;
         $compiled = $this->compiler->compile($source, '/tmp/test.ml.php');
 
         $this->assertStringContainsString('foreach($__currentLoopData as $item):', $compiled);
-        $this->assertStringContainsString('$this->getLastLoop()->tick(); endforeach;', $compiled);
+        $this->assertStringContainsString('$this->getLastLoop()?->tick(); endforeach;', $compiled);
     }
 
     public function testItCompilesJsonDirective(): void
@@ -116,7 +116,7 @@ EOT;
         $compiled = $this->compiler->compile($source, '/tmp/test.ml.php');
 
         $this->assertStringContainsString('foreach($__currentLoopData as $k => $v):', $compiled);
-        $this->assertStringContainsString('$this->getLastLoop()->tick(); endforeach;', $compiled);
+        $this->assertStringContainsString('$this->getLastLoop()?->tick(); endforeach;', $compiled);
         $this->assertStringContainsString("<?= (\$user->hasRole('admin', ['super'])) ? 'checked' : '' ?>", $compiled);
     }
 }

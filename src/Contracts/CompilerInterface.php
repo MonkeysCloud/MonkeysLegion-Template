@@ -14,4 +14,9 @@ interface CompilerInterface
      * @return string
      */
     public function compile(string $source, string $path): string;
+
+    /**
+     * Get the parser instance used by this compiler.
+     */
+    public function getParser(): ParserInterface;
 }

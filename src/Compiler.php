@@ -81,6 +81,11 @@ class Compiler implements CompilerInterface
         return $this->registry;
     }
 
+    public function getParser(): \MonkeysLegion\Template\Contracts\ParserInterface
+    {
+        return $this->parser;
+    }
+
     public function setStrictMode(bool $enable): void
     {
         $this->strictMode = $enable;
@@ -463,22 +468,35 @@ class Compiler implements CompilerInterface
     {
         return (string)preg_replace_callback(
             '/@method\(["\'](.+?)["\']\)/',
-            fn(array $m) => "<?= '<input type=\"hidden\" name=\"_method\" value=\"{$m[1]}\">' ?>",
+            fn(array $m) => "<?= '<input type=\"hidden\" name=\"_method\" value=\"' . htmlspecialchars('" . $m[1] . "', ENT_QUOTES, 'UTF-8') . '\">' ?>",
             $php
         );
     }
 
     /**
      * Compile @env() directive
-     * Check environment
+     * Check environment — supports single string or array of environments.
+     *
+     * @env('local')
+     * @env(['local', 'staging'])
      */
     private function compileEnv(string $php): string
     {
         $php = (string)preg_replace_callback(
-            '/@env\(["\'](.+?)["\']\)/',
-            fn(array $m) =>
-            "<?php if ((\$_ENV['APP_ENV'] ?? \$_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === '{$m[1]}'): ?>",
-            $php
+            '/@env\s*\(\s*(.+?)\s*\)(?!\s*:)/',
+            function (array $m): string {
+                $arg = trim($m[1]);
+                $envExpr = "(\$_ENV['APP_ENV'] ?? \$_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?? 'production')";
+
+                // Array syntax: @env(['local', 'staging'])
+                if (str_starts_with($arg, '[')) {
+                    return "<?php if (in_array({$envExpr}, {$arg}, true)): ?>";
+                }
+
+                // Single string: @env('local') or @env("local")
+                return "<?php if ({$envExpr} === {$arg}): ?>";
+            },
+            $php,
         );
 
         $php = (string)preg_replace('/@endenv\b/', '<?php endif; ?>', $php);
@@ -866,13 +884,25 @@ class Compiler implements CompilerInterface
         // If we put tick() at end of BODY:
         // Iter 1: index 0. End of body: index becomes 1.
         // Iter 2 starts: index is 1. Correct.
-        $php = (string)preg_replace('/@endforeach\b/', "<?php \$this->getLastLoop()->tick(); endforeach; \$this->popLoop(); \$loop = \$this->getLastLoop(); ?>", $php);
+        $php = (string)preg_replace('/@endforeach\b/', "<?php \$this->getLastLoop()?->tick(); endforeach; \$this->popLoop(); \$loop = \$this->getLastLoop(); ?>", $php);
 
         // @for
         $php = (string)preg_replace($forPattern, "<?php for ($1): ?>", $php);
 
         // @while
         $php = (string)preg_replace($whilePattern, "<?php while ($1): ?>", $php);
+
+        // @breakIf($cond) / @continueIf($cond)
+        $php = (string)preg_replace_callback(
+            '/\@breakIf\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
+            fn(array $m) => "<?php if ({$m[1]}) break; ?>",
+            $php,
+        );
+        $php = (string)preg_replace_callback(
+            '/\@continueIf\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
+            fn(array $m) => "<?php if ({$m[1]}) continue; ?>",
+            $php,
+        );
 
         // @endfor, @endwhile, @break, @continue handled by compileSimpleDirectives()
 
@@ -1054,6 +1084,20 @@ class Compiler implements CompilerInterface
             '/@includeUnless\((.+?),\s*[\'"](.+?)[\'"](?:,\s*(.+?))?\)/',
             fn($m) => "<?php if(!({$m[1]})) echo \$this->render('{$m[2]}', " . ($m[3] ?? '[]') . "); ?>",
             $php
+        );
+
+        // @includeFirst(['view1', 'view2'], ['data']) — try views in order, render first that exists
+        $php = (string)preg_replace_callback(
+            '/@includeFirst\s*\(\s*(\[.+?\])\s*(?:,\s*(.+?))?\s*\)/',
+            function (array $m): string {
+                $views = $m[1];
+                $data = isset($m[2]) && trim($m[2]) !== '' ? $m[2] : '[]';
+                return "<?php foreach ({$views} as \$__firstView) { "
+                    . "try { echo \$this->render(\$__firstView, {$data}); break; } "
+                    . "catch (\\RuntimeException) {} } "
+                    . "unset(\$__firstView); ?>";
+            },
+            $php,
         );
 
         // @each('view', $collection, 'variable', 'emptyView')
