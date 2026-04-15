@@ -190,8 +190,7 @@ final class Phase2DirectivesTest extends TestCase
         $compiled = $this->compile("@includeIf('optional.view')");
 
         $this->assertStringContainsString("render('optional.view')", $compiled);
-        $this->assertStringContainsString('catch', $compiled);
-        $this->assertStringContainsString('RuntimeException', $compiled);
+        $this->assertStringContainsString('viewExists', $compiled);
     }
 
     // =========================================================================

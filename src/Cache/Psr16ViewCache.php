@@ -125,11 +125,17 @@ final class Psr16ViewCache implements ViewCacheInterface
 
     public function flush(): void
     {
-        $this->store->clear();
-
+        // Only delete MLView disk files — do NOT call $this->store->clear()
+        // as the PSR-16 store may be shared with other application concerns
+        // (sessions, rate limits, etc.)
         $files = glob($this->diskCacheDir . DIRECTORY_SEPARATOR . '*.php');
         if ($files !== false) {
             foreach ($files as $file) {
+                // Delete the corresponding PSR-16 metadata keys
+                $basename = pathinfo($file, PATHINFO_FILENAME);
+                $this->store->delete(self::KEY_PREFIX . 'meta:' . $basename);
+                $this->store->delete(self::KEY_PREFIX . 'php:' . $basename);
+
                 if (function_exists('opcache_invalidate')) {
                     opcache_invalidate($file, true);
                 }

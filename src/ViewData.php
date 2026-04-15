@@ -99,7 +99,7 @@ final class ViewData
     public function render(): string
     {
         if ($this->renderer === null) {
-            throw new \RuntimeException('Cannot render ViewData without a Renderer.');
+            throw new \RuntimeException('Cannot render ViewData without a Renderer');
         }
 
         return $this->renderer->render($this->name, $this->data);

@@ -141,17 +141,21 @@ final class Renderer
                 throw new RuntimeException("Template source not found: {$__sourcePath}");
             }
 
+            // Pool key includes source path to prevent wrong-file hits
+            // when the same view name resolves to a different file
+            $__poolKey = $__name . ':' . $__sourcePath;
+
             // L1: Check in-memory pool first (avoids filemtime on repeated renders)
-            if ($this->templatePool->has($__name)) {
-                $poolMtime = $this->templatePool->getMtime($__name);
+            if ($this->templatePool->has($__poolKey)) {
+                $poolMtime = $this->templatePool->getMtime($__poolKey);
                 $currentMtime = filemtime($__sourcePath);
                 // Pool is valid if source hasn't changed since we cached it
                 if ($currentMtime !== false && $poolMtime !== null && (float) $currentMtime <= $poolMtime) {
-                    $__compiledPath = $this->templatePool->getPath($__name);
+                    $__compiledPath = $this->templatePool->getPath($__poolKey);
                     return $this->executeCompiledTemplate($__name, $__compiledPath, $scope, $__data);
                 }
                 // Source changed — evict from pool and recompile
-                $this->templatePool->forget($__name);
+                $this->templatePool->forget($__poolKey);
             }
 
             $__raw = file_get_contents($__sourcePath);
@@ -188,7 +192,7 @@ final class Renderer
 
                 // Store in L1 pool for same-request reuse
                 $sourceMtime = filemtime($__sourcePath);
-                $this->templatePool->put($__name, $__compiledPath, $sourceMtime !== false ? (float) $sourceMtime : 0.0);
+                $this->templatePool->put($__poolKey, $__compiledPath, $sourceMtime !== false ? (float) $sourceMtime : 0.0);
 
                 return $this->executeCompiledTemplate($__name, $__compiledPath, $scope, $__data);
             }
@@ -341,6 +345,19 @@ final class Renderer
     private function getCompiledPathForComponent(string $path): string
     {
         return $this->cacheDir . DIRECTORY_SEPARATOR . 'cmp_' . md5($path) . '.php';
+    }
+
+    /**
+     * Check if a view exists (used by @includeIf).
+     */
+    public function viewExists(string $name): bool
+    {
+        try {
+            $path = $this->loader->getSourcePath($name);
+            return is_file($path);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

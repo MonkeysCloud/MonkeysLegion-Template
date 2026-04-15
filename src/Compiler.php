@@ -474,11 +474,11 @@ class Compiler implements CompilerInterface
     }
 
     /**
-     * Compile @env() directive
+     * Compile the env directive.
      * Check environment — supports single string or array of environments.
      *
-     * @env('local')
-     * @env(['local', 'staging'])
+     * Usage: @​env('local')
+     * Usage: @​env(['local', 'staging'])
      */
     private function compileEnv(string $php): string
     {
@@ -1530,7 +1530,7 @@ class Compiler implements CompilerInterface
             function (array $m): string {
                 $view = $m[1];
                 $data = isset($m[2]) ? ', ' . $m[2] : '';
-                return "<?php try { echo \$this->render('{$view}'{$data}); } catch (\\RuntimeException) {} ?>";
+                return "<?php if (\$this->viewExists('{$view}')) { echo \$this->render('{$view}'{$data}); } ?>";
             },
             $php,
         );
