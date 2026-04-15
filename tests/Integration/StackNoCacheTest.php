@@ -32,7 +32,7 @@ class StackNoCacheTest extends TestCase
         $this->removeDirectory($this->cacheDir);
     }
 
-    public function testStackWorksWithoutCache()
+    public function testStackWorksWithoutCache(): void
     {
         // Create a layout with a stack
         file_put_contents($this->viewsDir . '/layout.ml.php', '
@@ -71,12 +71,12 @@ class StackNoCacheTest extends TestCase
         $this->assertStringNotContainsString('<!-- __ML_STACK_styles__ -->', $output);
     }
 
-    private function removeDirectory($path)
+    private function removeDirectory(string $path): void
     {
         if (!is_dir($path)) {
             return;
         }
-        $files = glob($path . '/*');
+        $files = glob($path . '/*') ?: [];
         foreach ($files as $file) {
             is_dir($file) ? $this->removeDirectory($file) : unlink($file);
         }

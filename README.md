@@ -1,414 +1,209 @@
 # MLView Template Engine
 
-MLView is the built‑in, lightweight template engine for **MonkeysLegion**, designed to help you write clean, component‑driven views with minimal boilerplate.
+**MLView** is the built‑in, high‑performance template engine for **MonkeysLegion**, designed for clean, component‑driven views with minimal boilerplate. Inspired by Blade, Twig, Jinja2, and Phoenix LiveView — with multi-tier caching and 0.015 ms/render performance.
+
+```
+monkeyscloud/monkeyslegion-template v2.0
+PHP 8.4+ | MIT License
+476 tests | 902 assertions | PHPStan Level 8
+```
 
 ---
 
-## 🌟 Key Features
+## Table of Contents
 
-- **Escaped output**: `{{ $var }}` → safe, HTML‑escaped data
-- **Raw output**: `{!! $html !!}` → unescaped HTML (use responsibly)
-- **Logic**: `@if`, `@foreach` with `$loop` variable, `@switch`, `@unless`, `@isset`, `@empty`
-- **Stacks**: `@stack`, `@push`, `@prepend` for efficient asset management
-- **Encryption**: `@inject` for service injection
-- **Components**: `<x-card title="...">...</x-card>` → reusable view fragments
-- **Slots**: `@slot('header')…@endslot` → named content areas inside components
-- **Layout inheritance**: `@extends('parent')`, `@section('name')…@endsection`, `@yield('name')`
-- **Caching & Hot‑Reload**: compiled PHP cached in `var/cache/views`; auto‑recompiles modified templates
+1. [Installation](#installation)
+2. [Quick Start](#quick-start)
+3. [Output & Echoes](#output--echoes)
+4. [Filters (Pipe Syntax)](#filters-pipe-syntax)
+5. [Control Structures](#control-structures)
+6. [Loops & The `$loop` Variable](#loops--the-loop-variable)
+7. [Components & Slots](#components--slots)
+8. [Layout Inheritance](#layout-inheritance)
+9. [Stacks & Asset Management](#stacks--asset-management)
+10. [Template Inclusion](#template-inclusion)
+11. [Frontend Helpers](#frontend-helpers)
+12. [Form Helpers](#form-helpers)
+13. [Framework Utilities](#framework-utilities)
+14. [Advanced Directives](#advanced-directives)
+15. [Fragment Caching](#fragment-caching)
+16. [Template Macros](#template-macros)
+17. [Element-Level Directives (HEEx-Style)](#element-level-directives-heex-style)
+18. [Namespaces & Theming](#namespaces--theming)
+19. [View Composers & Events](#view-composers--events)
+20. [Streaming & Async](#streaming--async)
+21. [Security](#security)
+22. [Caching Architecture](#caching-architecture)
+23. [Performance](#performance)
+24. [Testing](#testing)
+25. [CLI Tooling](#cli-tooling)
+26. [Extensibility](#extensibility)
 
 ---
 
-## 📂 Directory Structure
+## Installation
+
+```bash
+composer require monkeyscloud/monkeyslegion-template
+```
+
+**Optional dependencies:**
+
+| Package | Purpose |
+|---------|---------|
+| `psr/simple-cache` | PSR-16 cache backend (Redis/Memcached) |
+| `monkeyscloud/monkeyslegion-cache` | Full-featured caching with tags & locks |
+| `monkeyscloud/monkeyslegion-di` | Class-based component DI |
+| `monkeyscloud/monkeyslegion-cli` | CLI commands (`view:compile`, `lint`) |
+
+---
+
+## Quick Start
+
+### Directory Structure
 
 ```
 my-app/
 ├─ resources/views/
-│  ├─ home.ml.php              # Top‑level view
+│  ├─ home.ml.php              # Top-level view
 │  ├─ posts/
-│  │  └─ show.ml.php           # Nested view under posts/
+│  │  └─ show.ml.php           # Nested: posts.show
+│  ├─ layouts/
+│  │  └─ app.ml.php            # Layout template
 │  └─ components/
-│     ├─ layout.ml.php         # Layout component for <x-layout>
-│     └─ alert.ml.php          # Alert component
-└─ var/
-   └─ cache/views/             # Generated PHP cache files
+│     ├─ alert.ml.php          # <x-alert> component
+│     └─ card.ml.php           # <x-card> component
+└─ var/cache/views/             # Compiled PHP (auto-generated)
 ```
 
-**Dot‑notation** when rendering:
+### Hello World
 
-- `home` → `resources/views/home.ml.php`
+```php
+// resources/views/hello.ml.php
+<h1>Hello, {{ $name }}!</h1>
+```
+
+```php
+use MonkeysLegion\Template\{Loader, Parser, Compiler, Renderer, MLView};
+
+$loader   = new Loader('resources/views', 'var/cache/views');
+$parser   = new Parser();
+$compiler = new Compiler($parser);
+$renderer = new Renderer($parser, $compiler, $loader, true, 'var/cache/views');
+
+$view = new MLView($loader, $compiler, $renderer, 'var/cache/views');
+
+echo $view->render('hello', ['name' => 'Alice']);
+// Output: <h1>Hello, Alice!</h1>
+```
+
+First call: parse → compile → cache. Subsequent calls: include cached PHP directly.
+
+**Dot-notation** resolves paths:
+- `home` → `resources/views/home.ml.php`  
 - `posts.show` → `resources/views/posts/show.ml.php`
 
 ---
 
-## 2 · Hello, World
+## Output & Echoes
 
-<!-- resources/views/hello.ml.php -->
-<h1>Hello, {{ $name }}!</h1>
-
-use MonkeysLegion\Template\MLView;
-
-$view = new MLView(base_path('resources/views'));
-
-echo $view->render('hello', ['name' => 'Alice']);
-
-The first call parses → compiles → caches the template; subsequent renders are just an include.
-
----
-
-## 3 · Component Syntax
-
-<x-card>
-  <x-slot:title>
-    Welcome, {{ $user->name }}
-  </x-slot:title>
-
-  <p>Your last login was {{ $user->lastLogin->diffForHumans() }}.</p>
-</x-card>
-
-<x-component> ↔ PHP class App\View\Components\Component.
-
-<x-slot:name> fills the component's $this->slot('name').
-
-{{ … }} escapes htmlspecialchars(); {!! … !!} prints raw.
-
----
-
-## 6 · Directives & Helpers
-
-MLView supports a wide range of directives to make your templates expressive.
-
-### Control Structures
-
-| Directive                        | Description                             |
-| :------------------------------- | :-------------------------------------- |
-| `@if` / `@elseif` / `@else`      | Standard conditional blocks             |
-| `@unless($cond)`                 | Equivalent to `@if(!$cond)`             |
-| `@isset($var)` / `@empty($var)`  | Check if variable is set or empty       |
-| `@switch` / `@case` / `@default` | Switch statements                       |
-| `@foreach` / `@for` / `@while`   | Loops (`$loop` available in `@foreach`) |
-| `@break` / `@continue`           | Loop control                            |
-
-### Frontend Helpers
-
-| Directive                                | Description                                      |
-| :--------------------------------------- | :----------------------------------------------- |
-| `@json($data)`                           | Outputs safe JSON encoded data                   |
-| `@js($data)`                             | Outputs JavaScript-safe data (unescaped unicode) |
-| `@class(['btn', 'active' => $isActive])` | Conditionally compiled class string              |
-| `@style(['color: red' => $isError])`     | Conditionally compiled inline styles             |
-| `@checked($cond)`                        | Outputs `checked` attribute if true              |
-| `@selected($cond)`                       | Outputs `selected` attribute if true             |
-| `@disabled($cond)`                       | Outputs `disabled` attribute if true             |
-| `@readonly($cond)`                       | Outputs `readonly` attribute if true             |
-
-### Framework Utilities
-
-| Directive                   | Description                                         |
-| :-------------------------- | :-------------------------------------------------- |
-| `@csrf`                     | Outputs CSRF token field (hidden input)             |
-| `@method('PUT')`            | Outputs method spoofing field (hidden input)        |
-| `@error('field')`           | Checks for validation errors (`@enderror` to close) |
-| `@old('field', 'default')`  | Retrieves old input value                           |
-| `@lang('key', ['replace'])` | Translates a string                                 |
-| `@env('production')`        | Checks application environment                      |
-| `@auth` / `@guest`          | Checks authentication status                        |
-
-### Miscellaneous
-
-| Directive   | Description                                       |
-| :---------- | :------------------------------------------------ |
-| `@once`     | Ensures content is only rendered once per request |
-| `@verbatim` | Proteced block (prevents parsing of `{{ }}`)      |
-| `@php`      | Execute raw PHP code block                        |
-
----
-
-## 🛠️ Component Best Practices
-
-### Simple Component Creation
-
-Components should be straightforward with minimal PHP boilerplate:
+### Escaped Output
 
 ```php
-<div class="alert alert-<?= $type ?>">
-  <?php if (isset($slots['header'])): ?>
-    <div class="alert-header"><?= $slots['header']() ?></div>
-  <?php endif; ?>
-  <div class="alert-body"><?= $slotContent ?></div>
-</div>
+{{ $name }}                    {{-- HTML-escaped: <script> → &lt;script&gt; --}}
+{{ $user->name }}              {{-- Object property --}}
+{{ $count > 0 ? 'Yes' : 'No' }}  {{-- Expressions --}}
 ```
 
-- **Check slots**: Always use `isset($slots['name'])` before accessing slots
-- **Access slot content**: Use `$slots['header']()` for named slots or `$slotContent` for default content
-- **Component attributes**: All attributes passed to your component are available as PHP variables
-
-### Advanced Component Rendering
-
-Behind the scenes, MLView uses a component rendering pipeline:
-
-1. Slots are processed recursively to handle nested components
-2. Component attributes are extracted into the local scope
-3. The main content is captured in `$slotContent`
-4. Component output is inserted into the parent template
-
-This approach allows for reusable components that maintain proper scoping while keeping them simple.
-
-```blade
-@extends('layouts.app')
-
-@section('title')
-  {{ \$title }}
-@endsection
-
-@section('header')
-  <h1>Welcome!</h1>
-@endsection
-
-@section('content')
-  <p>Home page content…</p>
-@endsection
-```
-
-- `@extends('layouts.app')` indicates the parent template
-- `@section('…')…@endsection` blocks define content
-- `@yield('…')` in the parent is replaced by each section
-
-## ⚙️ Rendering Pipeline
-
-1. **Loader**: resolves raw `.ml.php` + cache path
-2. **Parser**: transforms `<x-*>`, `@slot`, `@section`, `@yield`, `{{ }}`, `{!! !!}` into an AST
-3. **Compiler**: generates pure PHP code from the AST
-4. **Cache**: writes to `var/cache/views/<name>.php` and `include`s it
-
----
-
-## 🔄 Caching & Hot‑Reload
-
-- **Location**: `var/cache/views`
-- **Auto‑invalidate**: template timestamp checked on each render
-- **Manual clear**: `php vendor/bin/ml cache:clear`
-
----
-
-## 🔧 Extensibility
-
-- **Custom directives**: add regex callbacks in `Compiler`
-- **AST extensions**: enhance `Parser` for new syntax
-- **Alternative loaders**: swap `Loader` for custom sources (DB, remote)
-
----
-
-## Debugging
-
-- **Dump data**: `@dump(\$variable)` inside templates to var_dump
-
-Happy templating with MLView! 🚀
-
-# MLView Component System
-
-The MLView template engine supports a component system to build reusable UI elements.
-
-## Component Usage
-
-Use components in your templates with `<x-name>` tags:
+### Raw Output
 
 ```php
-<!-- Using a component with a default slot -->
-<x-alert type="warning">
-    This is a warning message!
-</x-alert>
-
-<!-- Using a component with named slots -->
-<x-card>
-    @slot('header')
-        Card Title
-    @endslot
-
-    This is the main content (default slot)
-
-    @slot('footer')
-        <button>Action</button>
-    @endslot
-</x-card>
+{!! $trustedHtml !!}           {{-- Unescaped — use responsibly --}}
 ```
 
-## Creating Components
-
-Components should use PHP syntax for optimal compatibility:
+### Comments
 
 ```php
-<!-- resources/views/components/alert.ml.php -->
-@param(['type' => 'info', 'dismissible' => false])
-
-<div class="alert alert-<?= $type ?> <?= $dismissible ? 'alert-dismissible' : '' ?>">
-    <?php if (isset($slots['header'])): ?>
-        <div class="alert-header"><?= $slots['header']() ?></div>
-    <?php endif; ?>
-
-    <div class="alert-body"><?= $slotContent ?></div>
-
-    <?php if ($dismissible): ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    <?php endif; ?>
-</div>
+{{-- This comment is removed from compiled output --}}
 ```
 
-### Component Parameters
-
-Components can define default parameters using the `@param` directive:
+### PHP Blocks
 
 ```php
-@param(['name' => 'default value', 'another' => true, 'count' => 5])
-```
-
-These parameters:
-
-- Must be defined at the top of the component file
-- Will be available as PHP variables inside the component
-- Can be overridden by passing attributes to the component
-
-When using the component:
-
-```php
-<!-- Uses default 'info' type -->
-<x-alert>This is an info message</x-alert>
-
-<!-- Overrides the default type with 'danger' -->
-<x-alert type="danger">This is a danger alert!</x-alert>
-
-<!-- Sets dismissible to true -->
-<x-alert type="warning" dismissible="true">This is dismissible</x-alert>
-```
-
-The parameters system allows component authors to define sensible defaults while giving component users the flexibility to customize as needed.
-
-## Slot Handling
-
-Define slots using Blade-style `@slot` directives:
-
-```php
-<x-card>
-    @slot('header')
-        Card Title
-    @endslot
-
-    Default content
-</x-card>
-```
-
-## Component Data
-
-Inside a component:
-
-- `$slotContent` contains the default (unnamed) slot content
-- `$slots['name']()` calls and renders named slots
-- `$attributes` object (AttributeBag) contains all passed attributes
-- `@aware(['color' => 'gray'])` directives to access parent component data
-
-### Attribute Bag
-
-You can output all attributes passed to a component using the `$attributes` variable:
-
-```php
-<div {{ $attributes->merge(['class' => 'alert alert-info']) }}>
-    {{ $slot }}
-</div>
-```
-
-This allows usages like: `<x-alert class="mb-4" id="my-alert" />`, where `class` merges with the default and `id` is added.
-
-## Template Inclusion
-
-### @include directive
-
-The `@include` directive lets you include one template from another:
-
-```php
-<!-- Include a partial template -->
-@include('partials.header')
-
-<!-- Include with variables -->
-@include('partials.alert', ['type' => 'warning', 'message' => 'Danger ahead!'])
-```
-
-Templates included with `@include` should be placed in the standard views directory structure and are referenced using dot notation:
-
-- `@include('header')` → `resources/views/header.ml.php`
-- `@include('partials.header')` → `resources/views/partials/header.ml.php`
-
-### Component vs @include
-
-- **Components** (`<x-name>`) are placed in `resources/views/components/name.ml.php`
-- **Included templates** (`@include`) can be placed anywhere in the views directory
-- Components support slots and have a dedicated lifecycle
-- Included templates are simply merged into the parent template
-
----
-
-## 7 · Stacks & Layouts
-
-Push content to named stacks from anywhere in your view hierarchy, perfect for injecting scripts or styles from child views.
-
-```php
-<!-- In layout -->
-<head>
-    @stack('styles')
-</head>
-<body>
-    @stack('scripts')
-</body>
-
-<!-- In child view -->
-@push('scripts')
-    <script src="app.js"></script>
-@endpush
-
-@prepend('styles')
-    <style>body { background: #333; }</style>
-@endprepend
+@php
+    $total = array_sum($prices);
+@endphp
 ```
 
 ---
 
-## 8 · Service Injection
+## Filters (Pipe Syntax)
 
-Inject services directly into your templates using `@inject`:
+Inspired by Twig/Jinja2. Apply transformations via `|`:
 
 ```php
-@inject('metrics', 'App\Services\MetricsService')
+{{ $name | upper }}                          {{-- ALICE --}}
+{{ $name | lower | capitalize }}             {{-- Alice --}}
+{{ $text | truncate(50, '...') }}            {{-- First 50 chars... --}}
+{{ $price | number(2, '.', ',') }}           {{-- 1,234.56 --}}
+{{ $items | pluck('name') | join(', ') }}    {{-- Item1, Item2, Item3 --}}
+{{ $html | raw }}                            {{-- Skip escaping --}}
+```
 
-<div>
-    Monthly Visits: {{ $metrics->getMonthlyVisits() }}
-</div>
+### Built-in Filters (35+)
+
+| Category | Filters |
+|----------|---------|
+| **String** | `upper`, `lower`, `capitalize`, `title`, `trim`, `length`, `reverse`, `repeat`, `replace`, `split`, `slug`, `nl2br`, `truncate` |
+| **Number** | `number`, `abs`, `max`, `min` |
+| **Array** | `join`, `first`, `last`, `count`, `sort`, `keys`, `values`, `unique`, `flatten`, `chunk`, `pluck`, `merge` |
+| **Date** | `date` — works with `DateTime`, timestamps, and strings |
+| **Encoding** | `json`, `e`, `escape`, `raw` |
+| **Utility** | `default`, `prepend`, `append`, `wrap`, `pad`, `wordcount`, `excerpt`, `batch`, `map`, `filter`, `sum`, `avg` |
+
+### Examples
+
+```php
+{{-- Date formatting --}}
+{{ $createdAt | date('M d, Y') }}            {{-- Jan 15, 2026 --}}
+
+{{-- Default values --}}
+{{ $nickname | default('Anonymous') }}
+
+{{-- Array manipulation --}}
+{{ $users | pluck('email') | unique | count }}
+
+{{-- Chaining --}}
+{{ $bio | truncate(100) | nl2br }}
+
+{{-- JSON output --}}
+{{ $config | json }}
+```
+
+### Custom Filters
+
+```php
+$view->addFilter('currency', fn($v) => '$' . number_format($v, 2));
+// Usage: {{ $price | currency }}
 ```
 
 ---
 
-## 9 · The Loop Variable
+## Control Structures
 
-Inside `@foreach` loops, a `$loop` variable is automatically available to track iteration state:
+### Conditionals
 
 ```php
-@foreach($users as $user)
-    @if($loop->first)
-        Start of list
-    @endif
-
-    {{ $loop->iteration }} - {{ $user->name }}
-
-    @if($loop->last)
-        End of list
-    @endif
-@endforeach
+@if($user->isAdmin())
+    <span class="badge">Admin</span>
+@elseif($user->isModerator())
+    <span class="badge">Mod</span>
+@else
+    <span class="badge">User</span>
+@endif
 ```
 
-Properties available: `index`, `iteration`, `remaining`, `count`, `first`, `last`, `even`, `odd`, `depth`, `parent`.
-
----
-
-## 10 · Conditional Sugar
-
-Use shorthand directives for clearer intent:
+### Conditional Sugar
 
 ```php
 @unless($isAdmin)
@@ -416,154 +211,781 @@ Use shorthand directives for clearer intent:
 @endunless
 
 @isset($records)
-    // $records is defined and not null
+    Found {{ count($records) }} records.
 @endisset
 
-@empty($records)
-    // $records is empty
+@empty($results)
+    No results found.
 @endempty
+```
 
-@switch($i)
-    @case(1)
-        First case...
+### Switch
+
+```php
+@switch($status)
+    @case('active')
+        <span class="green">Active</span>
+    @break
+    @case('pending')
+        <span class="yellow">Pending</span>
     @break
     @default
-        Default case...
+        <span class="gray">Unknown</span>
 @endswitch
 ```
 
 ---
 
-## 11 · Advanced Includes
+## Loops & The `$loop` Variable
 
-Conditionally include views to keep templates clean:
+### `@foreach`
+
+Every `@foreach` provides a `$loop` variable with iteration metadata:
 
 ```php
+@foreach($users as $user)
+    @if($loop->first)
+        <div class="first-item">
+    @endif
+
+    <p>{{ $loop->iteration }}. {{ $user->name }}</p>
+
+    @if($loop->last)
+        </div>
+    @endif
+@endforeach
+```
+
+**`$loop` properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `$loop->index` | `int` | Zero-based index |
+| `$loop->iteration` | `int` | One-based index |
+| `$loop->remaining` | `int` | Items remaining |
+| `$loop->count` | `int` | Total items |
+| `$loop->first` | `bool` | Is first iteration |
+| `$loop->last` | `bool` | Is last iteration |
+| `$loop->even` | `bool` | Is even iteration |
+| `$loop->odd` | `bool` | Is odd iteration |
+| `$loop->depth` | `int` | Nesting depth (1+) |
+| `$loop->parent` | `?Loop` | Parent loop (nested) |
+
+### `@forelse`
+
+```php
+@forelse($posts as $post)
+    <h2>{{ $post->title }}</h2>
+@empty
+    <p>No posts found.</p>
+@endforelse
+```
+
+### `@for` / `@while`
+
+```php
+@for($i = 0; $i < 10; $i++)
+    {{ $i }}
+@endfor
+
+@while($condition)
+    Processing...
+@endwhile
+```
+
+### Loop Control
+
+```php
+@foreach($items as $item)
+    @if($item->hidden)
+        @continue
+    @endif
+    @if($loop->iteration > 5)
+        @break
+    @endif
+    {{ $item->name }}
+@endforeach
+```
+
+---
+
+## Components & Slots
+
+### Using Components
+
+```php
+{{-- Simple component --}}
+<x-alert type="warning">
+    Watch out!
+</x-alert>
+
+{{-- Self-closing --}}
+<x-badge text="Active" color="green" />
+
+{{-- With named slots --}}
+<x-card>
+    <x-slot:header>
+        Card Title
+    </x-slot:header>
+
+    Main content goes here.
+
+    <x-slot:footer>
+        <button>Save</button>
+    </x-slot:footer>
+</x-card>
+```
+
+### Creating Components
+
+```php
+{{-- resources/views/components/alert.ml.php --}}
+@param(['type' => 'info', 'dismissible' => false])
+
+<div class="alert alert-{{ $type }}" {{ $attributes }}>
+    @if($slots->has('header'))
+        <strong>{{ $slots->header }}</strong>
+    @endif
+
+    <div class="alert-body">{{ $slot }}</div>
+
+    @if($dismissible)
+        <button class="btn-close" data-dismiss="alert"></button>
+    @endif
+</div>
+```
+
+### Function Components
+
+Lightweight, closure-based components — no template file needed:
+
+```php
+$view->component('badge', fn(string $text, string $color = 'blue') =>
+    "<span class=\"badge bg-{$color}\">" . htmlspecialchars($text) . "</span>"
+);
+
+// Usage: <x-badge text="New" color="green" />
+```
+
+### Attribute Bag
+
+All extra attributes are collected in `$attributes`:
+
+```php
+{{-- Component template --}}
+<div {{ $attributes->merge(['class' => 'card']) }}>
+    {{ $slot }}
+</div>
+
+{{-- Usage --}}
+<x-card class="shadow-lg" id="my-card">Content</x-card>
+{{-- Output: <div class="card shadow-lg" id="my-card">Content</div> --}}
+```
+
+### Component Data
+
+Inside a component:
+
+| Variable | Description |
+|----------|-------------|
+| `$slot` | Default slot content |
+| `$slots->name` | Named slot content |
+| `$slots->has('name')` | Check if named slot exists |
+| `$attributes` | AttributeBag with all passed attributes |
+| `@aware(['key' => 'default'])` | Access parent component data |
+
+---
+
+## Layout Inheritance
+
+### Parent Layout
+
+```php
+{{-- resources/views/layouts/app.ml.php --}}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>@yield('title', 'My App')</title>
+    @stack('styles')
+</head>
+<body>
+    <nav>@yield('nav')</nav>
+
+    <main>
+        @yield('content')
+    </main>
+
+    @stack('scripts')
+</body>
+</html>
+```
+
+### Child View
+
+```php
+{{-- resources/views/home.ml.php --}}
+@extends('layouts.app')
+
+@section('title')
+    Home Page
+@endsection
+
+@section('content')
+    <h1>Welcome!</h1>
+    <p>This is the home page.</p>
+@endsection
+
+@push('scripts')
+    <script src="/js/home.js"></script>
+@endpush
+```
+
+---
+
+## Stacks & Asset Management
+
+Push CSS/JS from any child view or component into named stacks in the layout:
+
+```php
+{{-- In layout --}}
+<head>
+    @stack('styles')
+</head>
+<body>
+    @yield('content')
+    @stack('scripts')
+</body>
+
+{{-- In child view or component --}}
+@push('scripts')
+    <script src="app.js"></script>
+@endpush
+
+@prepend('styles')
+    <link rel="stylesheet" href="critical.css">
+@endprepend
+
+{{-- Push once (dedup) --}}
+@pushOnce('scripts')
+    <script src="shared-lib.js"></script>
+@endPushOnce
+```
+
+---
+
+## Template Inclusion
+
+```php
+{{-- Basic include --}}
+@include('partials.header')
+
+{{-- Include with data --}}
+@include('partials.alert', ['type' => 'warning', 'message' => 'Heads up!'])
+
+{{-- Conditional includes --}}
 @includeWhen($isLoggedIn, 'nav.user-menu')
 @includeUnless($isAdmin, 'nav.guest-menu')
+
+{{-- Include first match --}}
 @includeFirst(['custom.admin', 'admin.dashboard'], ['data' => $data])
+
+{{-- Include if exists --}}
+@includeIf('optional.sidebar')
 ```
 
 ---
 
+## Frontend Helpers
+
+| Directive | Example | Output |
+|-----------|---------|--------|
+| `@json($data)` | `@json($config)` | Safe JSON in HTML |
+| `@js($data)` | `@js($settings)` | JS-safe (unescaped unicode) |
+| `@class([...])` | `@class(['btn', 'active' => $isActive])` | `class="btn active"` |
+| `@style([...])` | `@style(['color: red' => $isError])` | `style="color: red"` |
+
+```php
+<button @class(['btn', 'btn-primary' => $isPrimary, 'disabled' => !$enabled])>
+    Submit
+</button>
+
+<div @style(['background: red' => $hasError, 'font-weight: bold' => $important])>
+    Content
+</div>
+
+<script>
+    const config = @json($appConfig);
+</script>
+```
+
+---
+
+## Form Helpers
+
+```php
+<form method="POST" action="/users">
+    @csrf
+    @method('PUT')
+
+    <input type="text" name="name" value="@old('name', $user->name)">
+
+    <input type="checkbox" @checked($user->isAdmin)>
+
+    <select>
+        @foreach($roles as $role)
+            <option value="{{ $role }}" @selected($role === $currentRole)>
+                {{ $role }}
+            </option>
+        @endforeach
+    </select>
+
+    <input type="text" @disabled(!$canEdit)>
+    <textarea @readonly($isLocked)></textarea>
+
+    @error('name')
+        <span class="error">{{ $message }}</span>
+    @enderror
+</form>
+```
+
+---
+
+## Framework Utilities
+
+### Environment Checks
+
+```php
+@env('production')
+    {{-- Only in production --}}
+    <script src="analytics.js"></script>
+@endenv
+
+@production
+    {{-- Shorthand for @env('production') --}}
+@endproduction
+```
+
+### Authentication
+
+```php
+@auth
+    Welcome, {{ auth()->user()->name }}!
+@endauth
+
+@guest
+    <a href="/login">Login</a>
+@endguest
+```
+
+### Authorization
+
+```php
+@can('edit', $post)
+    <a href="/posts/{{ $post->id }}/edit">Edit</a>
+@endcan
+
+@cannot('delete', $post)
+    <span class="text-muted">Cannot delete</span>
+@endcannot
+```
+
+### Session
+
+```php
+@session('success')
+    <div class="alert alert-success">{{ $value }}</div>
+@endsession
+```
+
+### Service Injection
+
+```php
+@inject('metrics', 'App\Services\MetricsService')
+
+<div>Monthly visits: {{ $metrics->getMonthlyVisits() }}</div>
+```
+
+---
+
+## Advanced Directives
+
+### HTMX Fragment Rendering
+
+Render only a fragment for HTMX partial updates:
+
+```php
+<div id="user-list">
+    @fragment('user-table')
+        <table>
+            @foreach($users as $user)
+                <tr><td>{{ $user->name }}</td></tr>
+            @endforeach
+        </table>
+    @endfragment
+</div>
+```
+
+### Teleport
+
+Move content to a different DOM location (like Vue's `<Teleport>`):
+
+```php
+@teleport('#modals')
+    <div class="modal">Modal content</div>
+@endteleport
+```
+
+### Persist (HTMX)
+
+Mark elements that should persist across HTMX morph-merges:
+
+```php
+@persist('audio-player')
+    <audio id="player" src="{{ $track->url }}"></audio>
+@endpersist
+```
+
+### Model Type Hints (IDE Support)
+
+```php
+@model(App\Entity\User)
+{{-- IDE autocomplete now knows $model is a User --}}
+<h1>{{ $model->name }}</h1>
+```
+
+### Once
+
+```php
+@once
+    <script src="shared-component.js"></script>
+@endonce
+```
+
+### Verbatim
+
+Prevent MLView from parsing a block (useful for JS frameworks):
+
+```php
+@verbatim
+    <div id="vue-app">
+        {{ vueVariable }}
+    </div>
 @endverbatim
+```
 
-````
+### Autoescape
+
+Set the escaping context for a block:
+
+```php
+@autoescape('js')
+    var name = {{ $name }};
+@endautoescape
+```
 
 ---
 
-## 13 · Security & Extensibility
+## Fragment Caching
 
-### Context-Aware Escaping (`@escape`)
-
-MLView provides context-aware escaping to prevent XSS in various contexts (HTML, Attributes, JS, URL, CSS).
-By default, `{{ $var }}` escapes for HTML body.
-
-Use `@escape` for specific contexts:
+Cache expensive template fragments with PSR-16. Requires a cache backend.
 
 ```php
-<a href="@escape('url', $link)" onclick="alert(@escape('js', $message))">
-    @escape('html', $text)
-</a>
-````
+{{-- Cache sidebar for 5 minutes --}}
+@cache('sidebar-' . $userId, 300)
+    <div class="sidebar">
+        @foreach($expensiveQuery as $item)
+            <p>{{ $item->name }}</p>
+        @endforeach
+    </div>
+@endcache
 
-### Strict Mode
-
-Enable strict mode to warn about raw output `{!! !!}` usage, which helps identify potential security risks.
-
-```php
-$view = new MLView($path, ['strict_mode' => true]);
+{{-- Cache forever (no TTL) --}}
+@cache('static-nav')
+    <nav>...</nav>
+@endcache
 ```
 
-When enabled, any `{!! $var !!}` usage will trigger a user warning unless explicitly approved via `@escape('raw', $var)`.
-
-### Compiler Linting
-
-By default, the `Compiler` lints generated PHP code using `php -l` to catch syntax errors during the build phase. In environments where `exec()` is disabled or for maximum performance, this can be toggled:
+**Setup:**
 
 ```php
-$compiler = new Compiler($parser);
-$compiler->setEnableLinting(false); // Disable compile-time linting
+$view = new MLView($loader, $compiler, $renderer, $cacheDir, [
+    'cache' => $redisCache, // Psr\SimpleCache\CacheInterface
+]);
 ```
 
-### Custom Directives
-
-Extend the compiler with your own directives:
-
-```php
-$view->addDirective('datetime', function ($expression) {
-    return "<?php echo date('Y-m-d H:i:s', {$expression}); ?>";
-});
-```
-
-Usage: `@datetime($timestamp)`
-
-### Custom Filters
-
-Register custom filters accessible via pipe syntax `|`:
-
-```php
-$view->addFilter('upper', function ($value) {
-    return strtoupper($value);
-});
-```
-
-Usage: `{{ $name | upper }}`
-Chainable: `{{ $name | lower | ucfirst }}`
-Arguments: `{{ $name | limit(10) }}`
+When no cache backend is configured, `@cache` blocks render normally with zero overhead.
 
 ---
 
-## 14 · Namespaces & Theming
+## Template Macros
+
+Define reusable template snippets:
+
+```php
+{{-- Define a macro --}}
+@macro('statusBadge', $status, $label)
+    <span class="badge badge-{{ $status }}">{{ $label }}</span>
+@endmacro
+
+{{-- Use the macro --}}
+@call('statusBadge', 'success', 'Active')
+@call('statusBadge', 'danger', 'Inactive')
+```
+
+---
+
+## Element-Level Directives (HEEx-Style)
+
+Inspired by Phoenix LiveView — attach directives directly to HTML elements:
+
+```php
+{{-- Conditional rendering --}}
+<div :if="$showBanner" class="banner">Welcome!</div>
+
+{{-- Negated conditional --}}
+<p :unless="$isAdmin">You are not authorized.</p>
+
+{{-- Loop rendering --}}
+<li :for="$items as $item">{{ $item->name }}</li>
+```
+
+Compiles to standard PHP control structures wrapping the element.
+
+---
+
+## Namespaces & Theming
 
 ### View Namespaces
 
-Register namespaces to organize views (e.g. for packages or modules):
+Organize views by package or module:
 
 ```php
 $view->addNamespace('ui', __DIR__ . '/vendor/ui-lib/views');
-```
 
-Usage: `ui::alert` resolves to `/vendor/ui-lib/views/alert.ml.php`.
+// Usage: ui::alert → /vendor/ui-lib/views/alert.ml.php
+echo $view->render('ui::alert', ['type' => 'info']);
+```
 
 ### Theming System
 
-MLView supports view cascading and theming.
-
-**1. Multiple View Paths:**
-
 ```php
-$view->addViewPath('/path/to/my/overrides');
-```
+// 1. Multiple view paths (checked in order)
+$view->addViewPath('/path/to/overrides');
 
-Loader checks paths in order. If `home` is requested, it checks `/overrides/home.ml.php` then default path.
-
-**2. Theme Activation:**
-
-```php
+// 2. Theme activation (prepends theme path)
 $view->setTheme('dark');
-// assumes themes are in resources/themes/dark, prepends this path.
-```
+// Checks: themes/dark/home.ml.php → resources/views/home.ml.php
 
-**3. Namespace Overrides:**
-Themes can override namespaced views by following the directory convention: `themes/{theme}/vendor/{namespace}/{view}.ml.php`.
-For example, `themes/dark/vendor/ui/alert.ml.php` will override `ui::alert`.
+// 3. Namespace overrides in themes
+// themes/dark/vendor/ui/alert.ml.php overrides ui::alert
+```
 
 ---
 
-## 15 · Production Tooling
+## View Composers & Events
 
-MLView includes a CLI tool to help maintain your templates.
+### View Composers
 
-### Linting
+Automatically attach data to views by pattern:
 
-The linter scans your templates for:
+```php
+// Attach $categories to all 'shop.*' views
+$view->composer('shop.*', function (ViewData $data) {
+    $data->set('categories', Category::all());
+});
 
-- Missing components (`<x-component>`)
-- Missing included views (`@include`)
-- Syntax errors
+// Multiple patterns
+$view->composer(['layouts.*', 'partials.nav'], function (ViewData $data) {
+    $data->set('menuItems', Menu::forUser(auth()->user()));
+});
+```
 
-**Usage:**
+### Shared Data
+
+```php
+$view->share('appName', 'MonkeysCloud');
+// $appName available in ALL templates
+```
+
+### Lifecycle Events
+
+```php
+// Before render
+$view->rendering(function (ViewRendering $event) {
+    // $event->name, $event->data
+    $event->data['renderTime'] = microtime(true);
+});
+
+// After render
+$view->rendered(function (ViewRendered $event) {
+    // $event->name, $event->data, $event->output
+    Log::info("Rendered {$event->name}");
+});
+```
+
+---
+
+## Streaming & Async
+
+Render templates as a stream of chunks for progressive HTML delivery:
+
+```php
+$view = new MLView($loader, $compiler, $renderer, $cacheDir);
+
+foreach ($view->stream('dashboard', $data) as $chunk) {
+    echo $chunk;
+    flush();
+}
+```
+
+### Render String (No File)
+
+```php
+$html = $view->renderString('Hello {{ $name }}!', ['name' => 'World']);
+```
+
+---
+
+## Security
+
+### Context-Aware Escaping
+
+```php
+<a href="@escape('url', $link)"
+   onclick="alert(@escape('js', $message))">
+    @escape('html', $text)
+</a>
+```
+
+Contexts: `html`, `js`, `url`, `css`, `attr`
+
+### Strict Mode
+
+Warn on raw `{!! !!}` usage — useful for security audits:
+
+```php
+$view = new MLView($loader, $compiler, $renderer, $cacheDir, [
+    'strict_mode' => true,
+]);
+```
+
+### Default Escaping
+
+All `{{ }}` output is escaped via `htmlspecialchars()` with `ENT_QUOTES` and `UTF-8`. Use `{!! !!}` or the `| raw` filter only for trusted content.
+
+---
+
+## Caching Architecture
+
+MLView uses a 3-tier caching system:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  L1: In-Memory Pool (CompiledTemplatePool)          │
+│  Per-request dedup — avoids filemtime on repeats    │
+├─────────────────────────────────────────────────────┤
+│  L2: View Cache (ViewCacheInterface)                │
+│  FilesystemViewCache — atomic writes, OPcache-aware │
+│  Psr16ViewCache — Redis/Memcached adapter           │
+├─────────────────────────────────────────────────────┤
+│  L3: Fragment Cache (@cache directive)              │
+│  PSR-16 store for expensive template blocks         │
+└─────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+```php
+// Development (default) — checks filemtime, auto-recompiles
+$view = new MLView($loader, $compiler, $renderer, $cacheDir);
+
+// Production — skip filemtime checks, max speed
+$view = new MLView($loader, $compiler, $renderer, $cacheDir, [
+    'production' => true,
+]);
+
+// Full-featured — PSR-16 backend + fragment caching
+$view = new MLView($loader, $compiler, $renderer, $cacheDir, [
+    'production' => true,
+    'cache'      => $redisCache, // Psr\SimpleCache\CacheInterface
+]);
+```
+
+### Cache Adapters
+
+| Adapter | Use Case |
+|---------|----------|
+| `FilesystemViewCache` | Default. Atomic writes, OPcache invalidation, dependency tracking |
+| `Psr16ViewCache` | Redis/Memcached via any PSR-16 implementation |
+| Custom | Implement `ViewCacheInterface` |
+
+### Cache Commands
+
+```bash
+# Clear all compiled templates
+$view->clearCache();
+
+# Or via CLI
+./bin/mlview cache:clear
+```
+
+---
+
+## Performance
+
+### Benchmarks (PHP 8.5, Apple Silicon)
+
+| Operation | Time | Notes |
+|-----------|------|-------|
+| Simple render (1000×) | **0.015 ms/render** | L1 pool hit |
+| Loop render 100 items (500×) | **0.038 ms/render** | With `$loop` variable |
+| Compilation (1000×) | **0.013 ms/compile** | With early-exit optimization |
+| Filter pipeline (1000×) | **0.025 ms/render** | Multiple chained filters |
+| Cache freshness check (10000×) | **0.004 ms/check** | filemtime comparison |
+| Large table (1000×10) | **3.0 ms** | 342 KB output |
+| Production vs Dev mode | **13.8× speedup** | Skip filemtime checks |
+
+### Optimizations Applied
+
+- **Early-exit guards**: 40+ directive compilers skipped via `str_contains()` when not present
+- **Cached FilterRegistry**: single instance shared across all expressions
+- **Single-pass simple directives**: 11 no-arg directives compiled in one regex
+- **L1 in-memory pool**: eliminates repeated filemtime calls within same request
+- **Atomic writes**: `file_put_contents()` with `LOCK_EX` for safe concurrent access
+- **OPcache integration**: `opcache_invalidate()` on recompile for immediate effect
+
+---
+
+## Testing
+
+### Test Utilities
+
+```php
+use MonkeysLegion\Template\Testing\TestView;
+
+$result = $view->test('dashboard', ['user' => $user]);
+
+$result->assertSee('Welcome');
+$result->assertDontSee('Error');
+$result->assertSeeInOrder(['Header', 'Content', 'Footer']);
+```
+
+### Running Tests
+
+```bash
+composer test                 # All 476 tests
+composer test:unit           # Unit tests only
+composer test:integration    # Integration tests only
+composer test:perf           # Performance benchmarks
+composer phpstan             # Static analysis (Level 8)
+composer check               # CS + PHPStan + Tests
+```
+
+---
+
+## CLI Tooling
+
+### Template Linting
 
 ```bash
 # Lint the default views directory
@@ -573,17 +995,207 @@ The linter scans your templates for:
 ./bin/mlview lint resources/views,modules/blog/views
 ```
 
-If any errors are found, the command exits with a non-zero status code, making it suitable for CI/CD pipelines.
+Checks for:
+- Missing components (`<x-component>`)
+- Missing included views (`@include`)
+- Syntax errors
+- Unclosed directives
 
-## 16 · Hardening & Portability
+Non-zero exit code on errors — CI/CD ready.
 
-MLView is built for professional, environment-agnostic deployment:
+### Pre-compilation
 
-- **Environment-Aware Linting**: Safeguards against disabled `exec()` calls on shared hosting while maintaining compile-time PHP syntax checks via `PHP_BINARY`.
-- **Stack-Based Validation**: High-integrity parsing ensures that components, slots, and sections are perfectly balanced and correctly nested before compilation.
-- **Exception-Safe Buffering**: Robust output buffer management ensures that template errors or fatal exceptions never leak buffer levels, maintaining application stability.
-- **Scope Snapshotting**: Slots automatically capture a static snapshot of parent variables at the moment of definition, ensuring predictable behavior in deeply nested components.
+```bash
+# Compile all templates ahead of time (deploy step)
+./bin/mlview view:compile resources/views
+```
 
-### Compatibility
+---
 
-MLView maintains a compatibility test suite to ensure that standard Blade features work as expected, ensuring a smooth migration path from other engines.
+## Extensibility
+
+### Custom Directives
+
+```php
+$view->addDirective('datetime', function ($expression) {
+    return "<?php echo date('Y-m-d H:i:s', {$expression}); ?>";
+});
+// Usage: @datetime($timestamp)
+```
+
+### Custom Filters
+
+```php
+$view->addFilter('initials', function (string $name): string {
+    return implode('', array_map(fn($w) => strtoupper($w[0]), explode(' ', $name)));
+});
+// Usage: {{ $fullName | initials }}  →  "JD"
+```
+
+### Custom Cache Adapter
+
+```php
+use MonkeysLegion\Template\Cache\ViewCacheInterface;
+
+class MyCache implements ViewCacheInterface
+{
+    public function isFresh(string $name, string $sourcePath, string $compiledPath): bool { /* ... */ }
+    public function put(string $compiledPath, string $compiledPhp): void { /* ... */ }
+    public function getCompiledPath(string $name, string $sourcePath): string { /* ... */ }
+    public function forget(string $name): void { /* ... */ }
+    public function flush(): void { /* ... */ }
+}
+
+$renderer->setViewCache(new MyCache());
+```
+
+### Pipeline Extension Points
+
+| Extension | How |
+|-----------|-----|
+| Custom directives | `$view->addDirective()` |
+| Custom filters | `$view->addFilter()` |
+| Function components | `$view->component()` |
+| Custom cache | Implement `ViewCacheInterface` |
+| Custom loader | Implement `LoaderInterface` |
+| View composers | `$view->composer()` |
+| Render events | `$view->rendering()` / `$view->rendered()` |
+
+---
+
+## Complete Directive Reference
+
+### Output
+
+| Syntax | Description |
+|--------|-------------|
+| `{{ $var }}` | Escaped output |
+| `{!! $var !!}` | Raw output |
+| `{{ $var \| filter }}` | Filtered output |
+| `{{-- comment --}}` | Template comment (stripped) |
+
+### Control Flow
+
+| Directive | Description |
+|-----------|-------------|
+| `@if` / `@elseif` / `@else` / `@endif` | Conditionals |
+| `@unless` / `@endunless` | Negated if |
+| `@isset` / `@endisset` | Variable existence check |
+| `@empty` / `@endempty` | Empty check |
+| `@switch` / `@case` / `@default` / `@endswitch` | Switch |
+| `@foreach` / `@endforeach` | Loop with `$loop` variable |
+| `@forelse` / `@empty` / `@endforelse` | Loop with empty fallback |
+| `@for` / `@endfor` | C-style for loop |
+| `@while` / `@endwhile` | While loop |
+| `@break` / `@continue` | Loop control |
+
+### Components & Layout
+
+| Directive | Description |
+|-----------|-------------|
+| `<x-name>` / `<x-name />` | Component usage |
+| `<x-slot:name>` | Named slot |
+| `@slot('name')` / `@endslot` | Slot (alternative syntax) |
+| `@param([...])` | Component defaults |
+| `@aware([...])` | Parent component data |
+| `@extends('layout')` | Layout inheritance |
+| `@section('name')` / `@endsection` | Section definition |
+| `@yield('name', 'default')` | Section output |
+| `@parent` | Insert parent section content |
+
+### Template Composition
+
+| Directive | Description |
+|-----------|-------------|
+| `@include('view', [...])` | Include template |
+| `@includeIf('view')` | Include if exists |
+| `@includeWhen($cond, 'view')` | Conditional include |
+| `@includeUnless($cond, 'view')` | Negated conditional include |
+| `@includeFirst(['a', 'b'])` | First available |
+| `@inject('var', 'Class')` | Service injection |
+
+### Stacks
+
+| Directive | Description |
+|-----------|-------------|
+| `@stack('name')` | Output stack |
+| `@push('name')` / `@endpush` | Append to stack |
+| `@prepend('name')` / `@endprepend` | Prepend to stack |
+| `@pushOnce('name')` / `@endPushOnce` | Deduplicated push |
+
+### Frontend
+
+| Directive | Description |
+|-----------|-------------|
+| `@json($data)` | JSON encode |
+| `@js($data)` | JS-safe encode |
+| `@class([...])` | Conditional CSS classes |
+| `@style([...])` | Conditional inline styles |
+| `@checked($cond)` | Checked attribute |
+| `@selected($cond)` | Selected attribute |
+| `@disabled($cond)` | Disabled attribute |
+| `@readonly($cond)` | Readonly attribute |
+| `@required` | Required attribute |
+
+### Forms & Security
+
+| Directive | Description |
+|-----------|-------------|
+| `@csrf` | CSRF token field |
+| `@method('PUT')` | HTTP method spoofing |
+| `@error('field')` / `@enderror` | Validation errors |
+| `@old('field', 'default')` | Old input value |
+| `@escape('context', $var)` | Context-aware escaping |
+
+### Framework
+
+| Directive | Description |
+|-----------|-------------|
+| `@env('name')` / `@endenv` | Environment check |
+| `@production` / `@endproduction` | Production shorthand |
+| `@auth` / `@endauth` | Authenticated check |
+| `@guest` / `@endguest` | Guest check |
+| `@can('ability', $model)` / `@endcan` | Authorization |
+| `@cannot('ability', $model)` / `@endcannot` | Authorization negated |
+| `@session('key')` / `@endsession` | Session check |
+| `@hasSection('name')` | Check section exists |
+| `@sectionMissing('name')` | Check section missing |
+
+### Advanced
+
+| Directive | Description |
+|-----------|-------------|
+| `@cache('key', ttl)` / `@endcache` | Fragment caching |
+| `@macro('name', ...)` / `@endmacro` | Define macro |
+| `@call('name', ...)` | Invoke macro |
+| `@fragment('name')` / `@endfragment` | HTMX partial rendering |
+| `@teleport('selector')` / `@endteleport` | Content teleport |
+| `@persist('id')` / `@endpersist` | HTMX persist |
+| `@model(Class)` | IDE type hint |
+| `@autoescape('context')` / `@endautoescape` | Block escaping |
+| `@options([...])` | Template options |
+| `@once` / `@endonce` | Render once |
+| `@verbatim` / `@endverbatim` | Skip parsing |
+| `@php` / `@endphp` | Raw PHP block |
+| `@use('Class')` | Import class |
+
+### Element-Level (HEEx-Style)
+
+| Attribute | Description |
+|-----------|-------------|
+| `:if="$condition"` | Conditional element |
+| `:unless="$condition"` | Negated conditional |
+| `:for="$items as $item"` | Loop element |
+
+### Debugging
+
+| Directive | Description |
+|-----------|-------------|
+| `@dump($var)` | Formatted var_dump |
+| `@dd($var)` | Dump and die |
+
+---
+
+## License
+
+MIT © MonkeysCloud

@@ -29,10 +29,9 @@
 # PHPUnit and test artifacts
 /phpunit.xml
 /phpunit.result.cache
+/.phpunit.result.cache
+/.phpunit.cache/
 
 # OS-specific files
 .DS_Store
-Thumbs.db
-
-report/
-.phpunit.cache/
+Thumbs.db.phpunit.cache/

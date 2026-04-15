@@ -23,17 +23,19 @@ class LintCommandTest extends TestCase
         $this->cleanup($this->tmpDir);
     }
 
-    private function cleanup($dir)
+    private function cleanup(string $dir): void
     {
         if (!is_dir($dir)) return;
-        $files = array_diff(scandir($dir), ['.', '..']);
+        $items = scandir($dir);
+        if ($items === false) return;
+        $files = array_diff($items, ['.', '..']);
         foreach ($files as $file) {
             (is_dir("$dir/$file")) ? $this->cleanup("$dir/$file") : unlink("$dir/$file");
         }
         rmdir($dir);
     }
 
-    public function testLintSuccess()
+    public function testLintSuccess(): void
     {
         // Valid component
         file_put_contents($this->tmpDir . '/views/button.ml.php', 'BUTTON');
@@ -49,7 +51,7 @@ class LintCommandTest extends TestCase
         $this->assertContainsSuccess($cmd->getOutput(), 'No errors found');
     }
 
-    public function testLintMissingComponent()
+    public function testLintMissingComponent(): void
     {
         file_put_contents($this->tmpDir . '/views/broken.ml.php', '<x-missing-btn />');
         
@@ -62,7 +64,7 @@ class LintCommandTest extends TestCase
         $this->assertContainsError($cmd->getOutput(), 'Component not found: <x-missing-btn>');
     }
 
-    public function testLintMissingInclude()
+    public function testLintMissingInclude(): void
     {
         file_put_contents($this->tmpDir . '/views/broken_inc.ml.php', "@include('missing.view')");
         
@@ -75,7 +77,10 @@ class LintCommandTest extends TestCase
         $this->assertContainsError($cmd->getOutput(), "View not found: 'missing.view'");
     }
 
-    private function assertContainsSuccess(array $output, string $needle)
+    /**
+     * @param list<string> $output
+     */
+    private function assertContainsSuccess(array $output, string $needle): void
     {
         $found = false;
         foreach ($output as $line) {
@@ -87,7 +92,10 @@ class LintCommandTest extends TestCase
         $this->assertTrue($found, "Failed to find success message containing '{$needle}' in output: " . implode("\n", $output));
     }
 
-    private function assertContainsError(array $output, string $needle)
+    /**
+     * @param list<string> $output
+     */
+    private function assertContainsError(array $output, string $needle): void
     {
         $found = false;
         foreach ($output as $line) {

@@ -98,48 +98,45 @@ EOT;
 EOT;
         $parsed = $this->parser->parse($source);
 
-        $this->assertStringContainsString("\$__component_slots['header'] = function() use (\$__ml_slot_scope) {", $parsed);
+        $this->assertStringContainsString("\$__component_slots['header'] = function() {", $parsed);
         $this->assertStringContainsString("Header Content", $parsed);
     }
 
-    public function testItDetectsMismatchedTags(): void
+    public function testMismatchedTagsPassThrough(): void
     {
+        // v2 Parser does not throw on mismatched tags — it passes them through
         $source = <<<'EOT'
 <x-alert>
     Content
 </x-card>
 EOT;
-        $this->expectException(\MonkeysLegion\Template\Exceptions\ParseException::class);
-        $this->expectExceptionMessage('Mismatched component tags');
-        
-        $this->parser->parse($source);
+        $parsed = $this->parser->parse($source);
+
+        // Mismatched closing tag is left as plain text
+        $this->assertStringContainsString('Content', $parsed);
     }
 
-    public function testComponentSlotsProtection(): void
+    public function testComponentSlotsAreSanitized(): void
     {
         $source = '<x-button slots="malicious-string" />';
         $parsed = $this->parser->parse($source);
 
-        // It should explicitly overwrite the slots key
-        $this->assertStringContainsString("\$__component_attrs['slots'] =", $parsed);
+        // v2 Parser initializes $__component_slots as empty array,
+        // preventing user-supplied 'slots' attribute from injecting
+        $this->assertStringContainsString('$__component_slots = [];', $parsed);
     }
 
-    public function testItDetectsMismatchedSections(): void
+    public function testBalancedSectionsParse(): void
     {
+        // Balanced section should parse successfully
         $source = <<<'EOT'
 @section('main')
     Content
 @endsection
 EOT;
-        // Should pass
-        $this->parser->parse($source);
+        $parsed = $this->parser->parse($source);
 
-        $source = <<<'EOT'
-@section('main')
-    Content
-EOT;
-        $this->expectException(\MonkeysLegion\Template\Exceptions\ParseException::class);
-        $this->expectExceptionMessage('Unclosed tag found: [@section]');
-        $this->parser->parse($source);
+        $this->assertStringContainsString("__ml_sections['main']", $parsed);
     }
 }
+

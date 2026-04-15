@@ -3,3 +3,6 @@ parameters:
     paths:
         - src
         - tests
+    scanFiles:
+        - phpstan/di-stubs.php
+        - phpstan/container-stubs.php

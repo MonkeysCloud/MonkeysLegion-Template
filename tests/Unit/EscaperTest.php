@@ -7,21 +7,21 @@ use PHPUnit\Framework\TestCase;
 
 class EscaperTest extends TestCase
 {
-    public function testHtmlEscaping()
+    public function testHtmlEscaping(): void
     {
         $input = '<script>alert("xss")</script>';
         $expected = '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;';
         $this->assertEquals($expected, Escaper::html($input));
     }
 
-    public function testAttrEscaping()
+    public function testAttrEscaping(): void
     {
         $input = 'foo"bar';
         $expected = 'foo&quot;bar';
         $this->assertEquals($expected, Escaper::attr($input));
     }
 
-    public function testJsEscaping()
+    public function testJsEscaping(): void
     {
         $input = ['foo' => 'bar"baz'];
         // JSON encoded
@@ -29,19 +29,19 @@ class EscaperTest extends TestCase
         $this->assertStringContainsString('bar\u0022baz', $encoded);
     }
 
-    public function testUrlEscaping()
+    public function testUrlEscaping(): void
     {
         $input = 'foo bar';
         $this->assertEquals('foo%20bar', Escaper::url($input));
     }
 
-    public function testEscapeHelper()
+    public function testEscapeHelper(): void
     {
         $this->assertEquals('&lt;b&gt;', Escaper::escape('html', '<b>'));
         $this->assertEquals('<b>', Escaper::escape('raw', '<b>'));
     }
 
-    public function testCheckStrictRawTriggersWarning()
+    public function testCheckStrictRawTriggersWarning(): void
     {
         $caught = false;
         set_error_handler(function ($errno, $errstr) use (&$caught) {

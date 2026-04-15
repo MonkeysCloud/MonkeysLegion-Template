@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace MonkeysLegion\Template\Console\Commands;
 
 use MonkeysLegion\Cli\Command;
+use MonkeysLegion\Template\Exceptions\TemplateSyntaxException;
+use MonkeysLegion\Template\Lexer\Lexer;
 use MonkeysLegion\Template\Loader;
 use MonkeysLegion\Template\Parser;
 use RuntimeException;
@@ -13,7 +15,10 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Lints template files for missing components and includes.
+ * Lints template files for syntax errors and missing components/includes.
+ *
+ * Uses the Lexer for syntax validation (balanced tags, directives)
+ * and the Parser for dependency checking.
  */
 class LintCommand extends Command
 {
@@ -30,11 +35,10 @@ class LintCommand extends Command
 
         $paths = explode(',', $pathsParam);
         $parser = new Parser();
+        $lexer = new Lexer();
         
         // We need a Loader to check if views exist.
-        // For CLI usage, we might verify relative to the path provided?
-        // Or we assume the path provided IS the view root?
-        // Let's assume the first path is the root for the Loader to verify existence against.
+        // For CLI usage, we assume the first path is the root.
         $loaderRoot = $paths[0];
         $loader = new Loader($loaderRoot, sys_get_temp_dir() . '/ml_lint_cache');
         
@@ -58,6 +62,16 @@ class LintCommand extends Command
 
                 $content = file_get_contents($file->getPathname());
                 if ($content === false) continue;
+
+                // Phase 1: Lexer-based syntax validation
+                try {
+                    $tokens = $lexer->tokenize($content, $file->getPathname());
+                    $lexer->validateBlockDirectives($tokens);
+                } catch (TemplateSyntaxException $e) {
+                    $this->error("  [{$file->getFilename()}] Syntax error: {$e->getMessage()}");
+                    $hasErrors = true;
+                    continue; // Skip dependency check if syntax is invalid
+                }
 
                 $deps = $parser->getDependencies($content);
                 $fileHasErrors = false;

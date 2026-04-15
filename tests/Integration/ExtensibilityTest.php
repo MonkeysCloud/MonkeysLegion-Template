@@ -6,7 +6,7 @@ use Tests\TestCase;
 
 class ExtensibilityTest extends TestCase
 {
-    public function testCustomDirective()
+    public function testCustomDirective(): void
     {
         // Define a custom directive @datetime($timestamp)
         $this->compiler->getRegistry()->addDirective('datetime', function ($expression) {
@@ -20,7 +20,7 @@ class ExtensibilityTest extends TestCase
         $this->assertStringContainsString('2023-01-01', $output);
     }
 
-    public function testCustomFilter()
+    public function testCustomFilter(): void
     {
         // Define a filter 'shout' -> strtoupper
         $this->compiler->getRegistry()->addFilter('shout', function ($value) {
@@ -34,7 +34,7 @@ class ExtensibilityTest extends TestCase
         $this->assertEquals('Hello WORLD', $output);
     }
 
-    public function testFilterWithArguments()
+    public function testFilterWithArguments(): void
     {
         // Define 'limit' filter
         $this->compiler->getRegistry()->addFilter('limit', function ($value, $limit) {
@@ -47,7 +47,7 @@ class ExtensibilityTest extends TestCase
         $this->assertEquals('hello', $output);
     }
     
-    public function testChainedFilters()
+    public function testChainedFilters(): void
     {
         $this->compiler->getRegistry()->addFilter('lower', fn($v) => strtolower($v));
         $this->compiler->getRegistry()->addFilter('ucfirst', fn($v) => ucfirst($v));
@@ -58,7 +58,7 @@ class ExtensibilityTest extends TestCase
         $this->assertEquals('Hello world', $output);
     }
 
-    public function testUnknownFilterStrictFallback()
+    public function testUnknownFilterStrictFallback(): void
     {
         // Strict mode on: unknown filter should error if we implemented that logic check
         // The current implementation calls checkStrictRaw if filter not found in registry (?) 

@@ -206,4 +206,53 @@ class VariableScope
 
         return $default;
     }
+
+    // =========================================================================
+    // Macro & Function Component Scope
+    // =========================================================================
+
+    /**
+     * Enter a macro execution scope.
+     *
+     * Macros get their own clean scope with only the arguments passed to them,
+     * isolating them from the parent template's variables.
+     *
+     * @param array<string, mixed> $args The macro arguments
+     */
+    public function enterMacroScope(array $args): void
+    {
+        $this->scopeStack[] = $args;
+    }
+
+    /**
+     * Exit a macro execution scope.
+     */
+    public function exitMacroScope(): void
+    {
+        if (count($this->scopeStack) > 1) {
+            array_pop($this->scopeStack);
+        }
+    }
+
+    /**
+     * Enter a function component scope.
+     *
+     * Function components receive their props as an isolated scope.
+     *
+     * @param array<string, mixed> $props The component props
+     */
+    public function enterFunctionComponentScope(array $props): void
+    {
+        $this->scopeStack[] = $props;
+    }
+
+    /**
+     * Exit a function component scope.
+     */
+    public function exitFunctionComponentScope(): void
+    {
+        if (count($this->scopeStack) > 1) {
+            array_pop($this->scopeStack);
+        }
+    }
 }

@@ -25,11 +25,17 @@ class DirectiveRegistry
         $this->filters[$name] = $handler;
     }
 
+    /**
+     * @return array<string, callable>
+     */
     public function getDirectives(): array
     {
         return $this->directives;
     }
 
+    /**
+     * @return array<string, callable>
+     */
     public function getFilters(): array
     {
         return $this->filters;

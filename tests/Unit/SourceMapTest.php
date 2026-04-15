@@ -1,132 +1,147 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Unit;
 
-use MonkeysLegion\Template\Compiler;
-use MonkeysLegion\Template\Parser;
-use MonkeysLegion\Template\Renderer;
-use MonkeysLegion\Template\Contracts\LoaderInterface;
-use MonkeysLegion\Template\Exceptions\ViewException;
-use MonkeysLegion\Template\Exceptions\ParseException;
+use MonkeysLegion\Template\SourceMap;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-class SourceMapTest extends TestCase
+#[CoversClass(SourceMap::class)]
+final class SourceMapTest extends TestCase
 {
-    private string $cacheDir;
-    private string $viewPath;
-
-    protected function setUp(): void
+    #[Test]
+    public function add_and_resolve_exact_mapping(): void
     {
-        $this->cacheDir = sys_get_temp_dir() . '/ml_tests_' . uniqid();
-        if (!is_dir($this->cacheDir)) {
-            mkdir($this->cacheDir, 0755, true);
-        }
-        $this->viewPath = $this->cacheDir . '/test_view.blade.php';
+        $map = new SourceMap();
+        $map->addMapping(10, '/views/home.ml.php', 5, 3);
+
+        $result = $map->resolve(10);
+
+        $this->assertNotNull($result);
+        $this->assertSame('/views/home.ml.php', $result['sourcePath']);
+        $this->assertSame(5, $result['sourceLine']);
+        $this->assertSame(3, $result['sourceColumn']);
     }
 
-    protected function tearDown(): void
+    #[Test]
+    public function resolve_nearest_preceding_mapping(): void
     {
-        // Cleanup
-        if (file_exists($this->viewPath)) {
-            unlink($this->viewPath);
-        }
-        $files = glob($this->cacheDir . '/*.php');
-        if ($files) {
-            foreach ($files as $f) unlink($f);
-        }
-        if (is_dir($this->cacheDir)) {
-            rmdir($this->cacheDir);
-        }
+        $map = new SourceMap();
+        $map->addMapping(10, '/views/home.ml.php', 5);
+        $map->addMapping(20, '/views/home.ml.php', 15);
+
+        // Line 13 is between mappings — should use line 10 mapping + offset
+        $result = $map->resolve(13);
+
+        $this->assertNotNull($result);
+        $this->assertSame('/views/home.ml.php', $result['sourcePath']);
+        $this->assertSame(8, $result['sourceLine']); // 5 + (13 - 10) = 8
     }
 
-    public function test_it_maps_exceptions_to_original_view_file()
+    #[Test]
+    public function resolve_returns_null_for_no_mappings(): void
     {
-        // 1. Create a view that throws an exception
-        // We use @php block to throw explicitly
-        $content = <<<'BLADE'
-Line 1
-Line 2
-Line 3
-@php
-    throw new \Exception("Something went wrong");
-@endphp
-Line 7
-BLADE;
-        file_put_contents($this->viewPath, $content);
+        $map = new SourceMap();
 
-        // 2. Setup Renderer
-        $parser = new Parser();
-        $compiler = new Compiler($parser);
-        
-        // Mock Loader
-        $loader = new class($this->viewPath) implements LoaderInterface {
-            private $path;
-            public function __construct($path) { $this->path = $path; }
-            public function getSourcePath(string $name): string {
-                return $this->path;
-            }
-        };
-
-        // Cache enabled so we test compiling + execution from file
-        $renderer = new Renderer($parser, $compiler, $loader, true, $this->cacheDir);
-
-        $initialLevel = ob_get_level();
-        try {
-            $renderer->render('test_view');
-            $this->fail("Exception was not thrown");
-        } catch (\Exception $e) {
-            while (ob_get_level() > $initialLevel) {
-                ob_end_clean();
-            }
-            // 3. Assertion: Now receiving original Exception instead of ViewException
-            $this->assertStringContainsString("Something went wrong", $e->getMessage());
-            
-            // The file will be the compiled cache file
-            $this->assertStringContainsString($this->cacheDir, $e->getFile());
-            
-            // The line will be 4 lines after the source due to our fixed header
-            // Source line 5 (throw) + 4 header lines = 9
-            $this->assertEquals(9, $e->getLine());
-        }
+        $this->assertNull($map->resolve(10));
     }
 
-    public function test_it_maps_syntax_errors_in_compiled_code()
+    #[Test]
+    public function resolve_returns_null_when_line_is_before_all_mappings(): void
     {
-        // 1. Create a view with invalid PHP syntax generated via blade?
-        // Hard to generate invalid PHP via valid Blade unless valid blade -> invalid php.
-        // e.g. {{ $var; }} (Blade usually treats this as echo($var;)) which is syntax error.
-        
-        $content = <<<'BLADE'
-Line 1
-Line 2
-{{ $foo; }}
-Line 4
-BLADE;
-        file_put_contents($this->viewPath, $content);
+        $map = new SourceMap();
+        $map->addMapping(10, '/views/home.ml.php', 5);
 
-        $parser = new Parser();
-        $compiler = new Compiler($parser);
-        
-        $loader = new class($this->viewPath) implements LoaderInterface {
-            private $path;
-            public function __construct($path) { $this->path = $path; }
-            public function getSourcePath(string $name): string {
-                return $this->path;
-            }
-        };
+        $this->assertNull($map->resolve(3));
+    }
 
-        $renderer = new Renderer($parser, $compiler, $loader, true, $this->cacheDir);
+    #[Test]
+    public function serialize_and_deserialize_round_trip(): void
+    {
+        $map = new SourceMap();
+        $map->addMapping(10, '/views/home.ml.php', 5, 3);
+        $map->addMapping(20, '/views/layout.ml.php', 15, 1);
 
-        try {
-            // This now throws ParseException at compile time
-            $renderer->render('test_view');
-            $this->fail("Exception was not thrown for syntax error");
-        } catch (ParseException $e) {
-            $this->assertEquals($this->viewPath, $e->getFile());
-            // Line 3 is {{ $foo; }}
-            $this->assertTrue(abs($e->getLine() - 3) <= 1, "Expected line 3, got " . $e->getLine());
-        } catch (\Throwable $t) {
-             $this->assertInstanceOf(ParseException::class, $t, "Should have been ParseException, got " . get_class($t));
-        }
+        $serialized   = $map->serialize();
+        $deserialized = SourceMap::deserialize($serialized);
+
+        $this->assertSame(
+            $map->getMappings(),
+            $deserialized->getMappings(),
+        );
+    }
+
+    #[Test]
+    public function from_compiled_source_parses_line_markers(): void
+    {
+        $compiled = <<<'PHP'
+        <?php // compiled template
+        // #line 1 "/views/home.ml.php"
+        echo "Hello";
+        // #line 5 "/views/home.ml.php"
+        echo $name;
+        echo " World";
+        // #line 10 "/views/layout.ml.php"
+        echo "Footer";
+        PHP;
+
+        $map = SourceMap::fromCompiledSource($compiled);
+
+        $this->assertFalse($map->isEmpty());
+        $this->assertSame(3, $map->count());
+
+        // Line 2 maps to home.ml.php line 1
+        $result = $map->resolve(2);
+        $this->assertNotNull($result);
+        $this->assertSame('/views/home.ml.php', $result['sourcePath']);
+        $this->assertSame(1, $result['sourceLine']);
+    }
+
+    #[Test]
+    public function is_empty_returns_true_for_new_map(): void
+    {
+        $map = new SourceMap();
+
+        $this->assertTrue($map->isEmpty());
+    }
+
+    #[Test]
+    public function count_method_works(): void
+    {
+        $map = new SourceMap();
+        $this->assertSame(0, $map->count());
+
+        $map->addMapping(1, '/test.php', 1);
+        $this->assertSame(1, $map->count());
+
+        $map->addMapping(5, '/test.php', 5);
+        $this->assertSame(2, $map->count());
+    }
+
+    #[Test]
+    public function multiple_files_in_source_map(): void
+    {
+        $map = new SourceMap();
+        $map->addMapping(1, '/views/layout.ml.php', 1);
+        $map->addMapping(10, '/views/home.ml.php', 1);
+        $map->addMapping(20, '/views/layout.ml.php', 30);
+
+        // Line 5 should resolve to layout
+        $result = $map->resolve(5);
+        $this->assertNotNull($result);
+        $this->assertSame('/views/layout.ml.php', $result['sourcePath']);
+
+        // Line 15 should resolve to home
+        $result = $map->resolve(15);
+        $this->assertNotNull($result);
+        $this->assertSame('/views/home.ml.php', $result['sourcePath']);
+
+        // Line 25 should resolve back to layout
+        $result = $map->resolve(25);
+        $this->assertNotNull($result);
+        $this->assertSame('/views/layout.ml.php', $result['sourcePath']);
     }
 }

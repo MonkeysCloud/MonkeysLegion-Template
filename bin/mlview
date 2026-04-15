@@ -2,6 +2,7 @@
 <?php
 
 use MonkeysLegion\Cli\CliKernel;
+use MonkeysLegion\Template\Console\Commands\CompileCommand;
 use MonkeysLegion\Template\Console\Commands\LintCommand;
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -11,6 +12,7 @@ if (!class_exists(CliKernel::class)) {
     exit(1);
 }
 
-$kernel = new CliKernel('MLView CLI', '1.0.0');
+$kernel = new CliKernel('MLView CLI', '2.0.0');
 $kernel->add(new LintCommand());
+$kernel->add(new CompileCommand());
 $kernel->run();
