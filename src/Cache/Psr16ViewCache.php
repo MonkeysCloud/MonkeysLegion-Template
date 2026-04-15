@@ -125,20 +125,41 @@ final class Psr16ViewCache implements ViewCacheInterface
 
     public function flush(): void
     {
-        // Only delete MLView disk files — do NOT call $this->store->clear()
-        // as the PSR-16 store may be shared with other application concerns
-        // (sessions, rate limits, etc.)
+        // Delete MLView disk files and their corresponding PSR-16 metadata keys
         $files = glob($this->diskCacheDir . DIRECTORY_SEPARATOR . '*.php');
         if ($files !== false) {
             foreach ($files as $file) {
-                // Delete the corresponding PSR-16 metadata keys
                 $basename = pathinfo($file, PATHINFO_FILENAME);
+
+                // The disk filename format is: name_<md5(sourcePath)>.php
+                // The PSR-16 key format is: mlview:meta:<md5(name:sourcePath)>
+                // Since we can't reconstruct the original name:sourcePath from the disk file,
+                // delete all MLView-prefixed PSR-16 keys by iterating known patterns.
+                // For now, delete using the basename as a best-effort approach,
+                // and also try the hashKey format if we can extract components.
                 $this->store->delete(self::KEY_PREFIX . 'meta:' . $basename);
                 $this->store->delete(self::KEY_PREFIX . 'php:' . $basename);
+
+                // Also try the raw md5 hash suffix (last 32 chars of basename)
+                if (strlen($basename) >= 33) {
+                    $hash = substr($basename, -32);
+                    if (ctype_xdigit($hash)) {
+                        $this->store->delete(self::KEY_PREFIX . 'meta:' . $hash);
+                        $this->store->delete(self::KEY_PREFIX . 'php:' . $hash);
+                    }
+                }
 
                 if (function_exists('opcache_invalidate')) {
                     opcache_invalidate($file, true);
                 }
+                @unlink($file);
+            }
+        }
+
+        // Also clean up .deps.php files
+        $depsFiles = glob($this->diskCacheDir . DIRECTORY_SEPARATOR . '*.deps.php');
+        if ($depsFiles !== false) {
+            foreach ($depsFiles as $file) {
                 @unlink($file);
             }
         }

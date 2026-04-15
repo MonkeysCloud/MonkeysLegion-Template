@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use MonkeysLegion\Template\Lexer\Lexer;
+use MonkeysLegion\Template\Lexer\Token;
 use MonkeysLegion\Template\Lexer\TokenType;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -21,34 +22,34 @@ final class WhitespaceControlTest extends TestCase
         $this->lexer = new Lexer();
     }
 
+    /**
+     * @param Token[] $tokens
+     * @return Token[]
+     */
+    private function filterByType(array $tokens, TokenType $type): array
+    {
+        return array_values(array_filter($tokens, static fn(Token $t): bool => $t->type === $type));
+    }
+
     #[Test]
     public function lexer_recognizes_whitespace_trim_markers_on_echoes(): void
     {
         $tokens = $this->lexer->tokenize('  {{- $var -}}  ', 'test.ml.php');
 
-        $hasEcho = false;
-        foreach ($tokens as $token) {
-            if ($token->type === TokenType::ECHO_OPEN || $token->type === TokenType::DIRECTIVE) {
-                $hasEcho = true;
-            }
-        }
-        $this->assertTrue($hasEcho || count($tokens) > 0, 'Should tokenize whitespace-controlled echoes');
+        $echoTokens = $this->filterByType($tokens, TokenType::ECHO_OPEN);
+        $this->assertNotEmpty($echoTokens, 'Should find ECHO_OPEN token for {{- $var -}}');
+        $this->assertTrue($echoTokens[0]->trimLeft, 'ECHO_OPEN with {{- should have trimLeft=true');
     }
 
     #[Test]
-    public function lexer_tokenizes_directive_with_trim_marker(): void
+    public function lexer_tokenizes_directive_with_correct_types(): void
     {
         $source = "@if(\$show)\n    Content\n@endif";
         $tokens = $this->lexer->tokenize($source, 'test.ml.php');
 
-        // Should produce tokens including directives
-        $directiveCount = 0;
-        foreach ($tokens as $token) {
-            if ($token->type === TokenType::DIRECTIVE) {
-                $directiveCount++;
-            }
-        }
-        $this->assertGreaterThanOrEqual(2, $directiveCount, 'Should find @if and @endif directives');
+        $directives = $this->filterByType($tokens, TokenType::DIRECTIVE);
+        $this->assertGreaterThanOrEqual(2, count($directives), 'Should find @if and @endif directives');
+        $this->assertStringContainsString('if', $directives[0]->value);
     }
 
     #[Test]
@@ -57,25 +58,27 @@ final class WhitespaceControlTest extends TestCase
         $source = "Line 1\n{{- \$var -}}\nLine 3";
         $tokens = $this->lexer->tokenize($source, 'test.ml.php');
 
-        // Verify tokens exist and have line tracking
         $this->assertNotEmpty($tokens);
+
+        $echoTokens = $this->filterByType($tokens, TokenType::ECHO_OPEN);
+        if (count($echoTokens) > 0) {
+            $this->assertEquals(2, $echoTokens[0]->line, 'Echo token should be on line 2');
+        }
+
         foreach ($tokens as $token) {
             $this->assertGreaterThanOrEqual(1, $token->line);
         }
     }
 
     #[Test]
-    public function standard_echoes_still_work(): void
+    public function standard_echoes_produce_echo_open_token(): void
     {
         $tokens = $this->lexer->tokenize('{{ $var }}', 'test.ml.php');
 
-        $hasEcho = false;
-        foreach ($tokens as $token) {
-            if ($token->type === TokenType::ECHO_OPEN) {
-                $hasEcho = true;
-            }
-        }
-        $this->assertTrue($hasEcho, 'Standard echoes should still tokenize correctly');
+        $echoTokens = $this->filterByType($tokens, TokenType::ECHO_OPEN);
+        $this->assertCount(1, $echoTokens, 'Standard {{ }} should produce exactly one ECHO_OPEN token');
+        $this->assertFalse($echoTokens[0]->trimLeft, 'Standard echo should not trim left');
+        $this->assertFalse($echoTokens[0]->trimRight, 'Standard echo should not trim right');
     }
 
     #[Test]
@@ -86,16 +89,24 @@ final class WhitespaceControlTest extends TestCase
     }
 
     #[Test]
-    public function comment_with_trim_markers(): void
+    public function comment_produces_comment_open_token(): void
     {
         $tokens = $this->lexer->tokenize('{{-- comment --}}', 'test.ml.php');
 
-        $hasComment = false;
-        foreach ($tokens as $token) {
-            if ($token->type === TokenType::COMMENT_OPEN) {
-                $hasComment = true;
-            }
-        }
-        $this->assertTrue($hasComment, 'Should tokenize comments');
+        $commentTokens = $this->filterByType($tokens, TokenType::COMMENT_OPEN);
+        $this->assertCount(1, $commentTokens, 'Should produce exactly one COMMENT_OPEN token');
+    }
+
+    #[Test]
+    public function token_ordering_is_preserved(): void
+    {
+        $source = "<h1>{{ \$title }}</h1>\n@if(\$show)\n<p>Content</p>\n@endif";
+        $tokens = $this->lexer->tokenize($source, 'test.ml.php');
+
+        $types = array_map(static fn(Token $t): TokenType => $t->type, $tokens);
+
+        $this->assertContains(TokenType::TEXT, $types, 'Should contain TEXT tokens');
+        $this->assertContains(TokenType::ECHO_OPEN, $types, 'Should contain ECHO_OPEN token');
+        $this->assertContains(TokenType::DIRECTIVE, $types, 'Should contain DIRECTIVE tokens');
     }
 }

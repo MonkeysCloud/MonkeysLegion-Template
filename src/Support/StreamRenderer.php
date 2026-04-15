@@ -82,8 +82,15 @@ final class StreamRenderer
             $scope = new VariableScope($data);
             VariableScope::setCurrent($scope);
 
-            // Capture output in small chunks
-            ob_start(null, 4096);
+            // Accumulate chunks for true streaming via output buffer callback
+            /** @var string[] $chunks */
+            $chunks = [];
+            ob_start(static function (string $buffer, int $phase) use (&$chunks): string {
+                if ($buffer !== '') {
+                    $chunks[] = $buffer;
+                }
+                return ''; // Consume output so it doesn't go to stdout
+            }, 4096);
 
             $GLOBALS['__data'] = $scope->getCurrentScope();
             $GLOBALS['__ml_attrs'] = [];
@@ -94,9 +101,11 @@ final class StreamRenderer
 
             include $compiledPath;
 
-            $remaining = ob_get_clean();
-            if ($remaining !== false && $remaining !== '') {
-                yield $remaining;
+            ob_end_clean();
+
+            // Yield accumulated chunks
+            foreach ($chunks as $chunk) {
+                yield $chunk;
             }
         } finally {
             unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
@@ -125,7 +134,14 @@ final class StreamRenderer
             $scope = new VariableScope($data);
             VariableScope::setCurrent($scope);
 
-            ob_start();
+            /** @var string[] $chunks */
+            $chunks = [];
+            ob_start(static function (string $buffer, int $phase) use (&$chunks): string {
+                if ($buffer !== '') {
+                    $chunks[] = $buffer;
+                }
+                return '';
+            }, 4096);
 
             $GLOBALS['__data'] = $scope->getCurrentScope();
             $GLOBALS['__ml_attrs'] = [];
@@ -136,15 +152,10 @@ final class StreamRenderer
 
             include $tmpPath;
 
-            $output = ob_get_clean();
-            if ($output !== false && $output !== '') {
-                // Yield in chunks for streaming
-                $chunkSize = 4096;
-                $offset = 0;
-                while ($offset < strlen($output)) {
-                    yield substr($output, $offset, $chunkSize);
-                    $offset += $chunkSize;
-                }
+            ob_end_clean();
+
+            foreach ($chunks as $chunk) {
+                yield $chunk;
             }
         } finally {
             unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);

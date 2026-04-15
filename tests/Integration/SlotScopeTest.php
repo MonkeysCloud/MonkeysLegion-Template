@@ -12,15 +12,11 @@ use PHPUnit\Framework\TestCase;
 
 class SlotScopeTest extends TestCase
 {
-    private string $tempDir;
-    private Renderer $renderer;
+    private string $tempDir = '';
+    private ?Renderer $renderer = null;
 
     protected function setUp(): void
     {
-        // TODO: Slot scope propagation uses a different pattern in v2.
-        // These tests need to be adapted once slot scoping is refactored.
-        $this->markTestSkipped('SlotScopeTest requires v2 slot scope refactoring');
-
         $this->tempDir = sys_get_temp_dir() . '/ml_test_' . uniqid();
         mkdir($this->tempDir, 0755, true);
         mkdir($this->tempDir . '/components', 0755, true);
@@ -29,18 +25,22 @@ class SlotScopeTest extends TestCase
         mkdir($cachePath, 0755, true);
         $loader = new Loader($this->tempDir, $cachePath);
         $this->renderer = new Renderer(new Parser(), new Compiler(new Parser()), $loader, false, $cachePath);
+
+        // TODO: Slot scope propagation uses a different pattern in v2.
+        // These tests need to be adapted once slot scoping is refactored.
+        $this->markTestSkipped('SlotScopeTest requires v2 slot scope refactoring');
     }
 
     protected function tearDown(): void
     {
-        if (isset($this->tempDir) && is_dir($this->tempDir)) {
+        if ($this->tempDir !== '' && is_dir($this->tempDir)) {
             $this->removeDirectory($this->tempDir);
         }
     }
 
     private function removeDirectory(string $path): void
     {
-        $files = glob($path . '/*');
+        $files = glob($path . '/*') ?: [];
         foreach ($files as $file) {
             is_dir($file) ? $this->removeDirectory($file) : unlink($file);
         }
@@ -71,6 +71,7 @@ EOT;
         file_put_contents($this->tempDir . '/page.ml.php', $pageSource);
 
         // 3. Render and expect success
+        $this->assertNotNull($this->renderer);
         $output = $this->renderer->render('page', ['title' => 'Passed Title']);
         $this->assertStringContainsString('Header: Passed Title', $output);
     }
@@ -98,6 +99,7 @@ EOT;
         file_put_contents($this->tempDir . '/page_local.ml.php', $pageSource);
 
         // 3. Render and expect success
+        $this->assertNotNull($this->renderer);
         $output = $this->renderer->render('page_local');
         
         $this->assertStringContainsString('Header: Local Scope Title', $output);

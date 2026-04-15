@@ -4,7 +4,8 @@
   "type": "library",
   "license": "MIT",
   "require": {
-    "php": "^8.4"
+    "php": "^8.4",
+    "ext-mbstring": "*"
   },
   "suggest": {
     "psr/http-message": "Required for HTMX @fragment directive support (^2.0)",

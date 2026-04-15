@@ -1855,6 +1855,9 @@ class Compiler implements CompilerInterface
      */
     private static ?array $directivePairs = null;
 
+    /**
+     * @return array<string, string>
+     */
     private static function getDirectivePairs(): array
     {
         return self::$directivePairs ??= [

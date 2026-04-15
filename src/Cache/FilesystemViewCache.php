@@ -110,21 +110,26 @@ final class FilesystemViewCache implements ViewCacheInterface
     public function forget(string $name): void
     {
         // Without a source path we can't compute exact hash, so glob for matching files
-        $pattern = $this->cacheDir . DIRECTORY_SEPARATOR
-            . str_replace(['.', '/'], '_', $name) . '_*.php';
-        $files = glob($pattern);
-        if ($files === false) {
-            return;
-        }
-        foreach ($files as $file) {
-            $this->invalidateOpcache($file);
-            @unlink($file);
+        $prefix = $this->cacheDir . DIRECTORY_SEPARATOR
+            . str_replace(['.', '/'], '_', $name) . '_*';
+
+        // Delete compiled PHP files and dependency manifests
+        foreach (['php', 'deps.php'] as $ext) {
+            $files = glob($prefix . '.' . $ext);
+            if ($files === false) {
+                continue;
+            }
+            foreach ($files as $file) {
+                $this->invalidateOpcache($file);
+                @unlink($file);
+            }
         }
     }
 
     public function flush(): void
     {
-        $files = glob($this->cacheDir . DIRECTORY_SEPARATOR . '*.php');
+        // Delete all compiled PHP files and dependency manifests
+        $files = glob($this->cacheDir . DIRECTORY_SEPARATOR . '*.{php,deps.php}', GLOB_BRACE);
         if ($files === false) {
             return;
         }

@@ -65,7 +65,8 @@ class LintCommand extends Command
 
                 // Phase 1: Lexer-based syntax validation
                 try {
-                    $lexer->tokenize($content);
+                    $tokens = $lexer->tokenize($content, $file->getPathname());
+                    $lexer->validateBlockDirectives($tokens);
                 } catch (TemplateSyntaxException $e) {
                     $this->error("  [{$file->getFilename()}] Syntax error: {$e->getMessage()}");
                     $hasErrors = true;
