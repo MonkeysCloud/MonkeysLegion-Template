@@ -112,17 +112,11 @@ class Compiler implements CompilerInterface
         $source = $this->preProcessCodeExamples($source);
 
         // 1) Run parser (handles <x-*>, @slot, @props, layouts, etc.)
-        try {
-            $php = $this->parser->parse($source);
-        } catch (ParseException $e) {
-            // If the parser threw a ParseException without a specific path, add it here
-            if ($e->getFile() === 'template.ml.php') {
-                throw new ParseException($e->getMessage(), $path, $e->getLine());
-            }
-            throw $e;
-        }
+        $php = $this->parser->parse($source);
 
         // 2) REMOVE Blade-style comments BEFORE we touch {{ }} or {!! !!}
+        //    This prevents {{-- ... --}} from being treated as an echo
+        //    and generating invalid PHP like "-- Meta Tags --".
         $php = $this->compileComments($php);
         $php = $this->compilePhpBlocks($php);
 
@@ -319,97 +313,32 @@ class Compiler implements CompilerInterface
         $php = $this->compileSimpleDirectives($php);
 
         // 14) Clean up excessive newlines
-        // Disabled to maintain 1:1 line mapping
-        // $php = (string)preg_replace('/\n{3,}/', "\n\n", $php);
-        // $php = trim($php);
+        // We handle this carefully to avoid messing up line numbers too much,
+        // but we do want some cleanup.
+        $php = (string)preg_replace('/\n{3,}/', "\n\n", $php);
+        $php = trim($php);
 
         // 15) Post-process to restore protected code examples
         $php = $this->postProcessCodeExamples($php);
 
-        $pathHeader = "/**PATH {$path} ENDPATH**/";
-        $useHeader = "use MonkeysLegion\\Template\\Support\\AttributeBag;";
+        $useHeader = "use MonkeysLegion\\Template\\Support\\AttributeBag;\n";
+        $pathHeader = "/**PATH {$path} ENDPATH**/\n";
 
-        $fullHeader = "<?php\n" .
-                      "{$pathHeader}\n" .
-                      "{$useHeader}\n" .
-                      "\n"; // Line 4 reserved
-
-        // If the content starts strictly with <?php, we merge it with our header
-        // Otherwise, we close the header to avoid double <?php or syntax errors
+        // If the compiled output starts with a PHP open tag,
+        // insert the `use` statement right after it.
         if (str_starts_with($php, '<?php')) {
-            $php = (string)preg_replace('/^<\?php(\s*)/i', '', $php);
+            $php = (string)preg_replace(
+                '/^<\?php(\s*)/i',
+                "<?php$1{$pathHeader}{$useHeader}",
+                $php,
+                1
+            );
         } else {
-            // Replace the last newline with a closing tag + newline to keep 4 lines
-            $fullHeader = substr($fullHeader, 0, -1) . "?>\n";
+            // Otherwise, prepend a PHP block with the use statement
+            $php = "<?php\n{$pathHeader}{$useHeader}?>\n" . $php;
         }
 
-        $compiled = $fullHeader . $php;
-        
-        // 16) Post-compilation syntax validation
-        $this->validateCompiledSyntax($compiled, $path);
-
-        return $compiled;
-    }
-
-    /**
-     * Perform a syntax check on the compiled PHP code.
-     * Throws ParseException if syntax is invalid.
-     */
-    private function validateCompiledSyntax(string $php, string $path): void
-    {
-        if (!$this->enableLinting || !function_exists('exec')) {
-            return;
-        }
-        
-        // We use a temporary file to lint the code safely
-        $tmpDir = sys_get_temp_dir();
-        $tmpFile = tempnam($tmpDir, 'ml_lint_');
-        
-        if ($tmpFile === false) {
-            return; // Fail gracefully if we can't create a temp file
-        }
-
-        try {
-            if (file_put_contents($tmpFile, $php) === false) {
-                return;
-            }
-
-            $output = [];
-            $returnVar = 0;
-            
-            // Use PHP_BINARY to ensure we use the same PHP version as the runner
-            $phpBinary = (defined('PHP_BINARY') && PHP_BINARY) ? PHP_BINARY : 'php';
-            
-            // Run php -l (lint)
-            exec(escapeshellcmd($phpBinary) . " -l " . escapeshellarg($tmpFile) . " 2>&1", $output, $returnVar);
-
-            if ($returnVar !== 0) {
-                $message = $output[0] ?? 'Unknown PHP syntax error';
-                
-                // Extract line number from "Errors parsing ... on line X"
-                if (preg_match('/on line (\d+)/', $message, $m)) {
-                    $errorLine = (int)$m[1];
-                    // Map back using our fixed 4-line header
-                    $originalLine = max(1, $errorLine - 4);
-                    
-                    throw new ParseException(
-                        "PHP Syntax Error: " . $message . " in " . basename($path),
-                        $path,
-                        $originalLine
-                    );
-                }
-
-                throw new ParseException(
-                    "PHP Syntax Error: " . $message . " in " . basename($path),
-                    $path,
-                    1
-                );
-            }
-        } finally {
-            if (file_exists($tmpFile)) {
-                unlink($tmpFile);
-            }
-        }
+        return $php;
     }
 
 
@@ -467,7 +396,7 @@ class Compiler implements CompilerInterface
                     "foreach ({$m[1]} as \$__k => \$__v) { " .
                     "if (is_int(\$__k) && \$__v) \$__styles[] = \$__v; " .
                     "elseif (\$__v) \$__styles[] = \$__k; " .
-                    "} echo implode('; ', \$__styles); ?>" . str_repeat("\n", substr_count($m[0], "\n"));
+                    "} echo implode('; ', \$__styles); ?>";
             },
             $php
         );
@@ -519,8 +448,8 @@ class Compiler implements CompilerInterface
     private function compileReadonly(string $php): string
     {
         return (string)preg_replace_callback(
-            '/\@readonly\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/xs',
-            fn(array $m) => "<?= ({$m[1]}) ? 'readonly' : '' ?>" . str_repeat("\n", substr_count($m[0], "\n")),
+            '/\@readonly\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x',
+            fn(array $m) => "<?= ({$m[1]}) ? 'readonly' : '' ?>",
             $php
         );
     }
@@ -695,11 +624,8 @@ class Compiler implements CompilerInterface
      */
     private function compileAttributeExpressions(string $php): string
     {
-        // Supporting loose syntax: { { ... } } or { ! ! ... ! ! }
-        $pattern = '/<([^>]+?)(\s+[a-zA-Z0-9_:-]+\s*=\s*["\'])([^"\']*?)(\{\s*\{\s*|\{\s*!\s*!\s*)(.*?)(\s*\}\s*\}|\s*!\s*!\s*\})([^"\']*?)(["\'])/s';
-
         return (string)preg_replace_callback(
-            $pattern,
+            '/<([^>]+?)(\s+[a-zA-Z0-9_:-]+\s*=\s*["\'])([^"\']*?)(\{\{|\{!!)(.*?)(\}\}|!!\})([^"\']*?)(["\'])/s',
             function (array $m) {
                 $tagStart = $m[1];
                 $attrStart = $m[2];
@@ -710,8 +636,7 @@ class Compiler implements CompilerInterface
                 $afterExpr = $m[7];
                 $attrClose = $m[8];
 
-                // Determine if escaped by checking for absence of '!' in the opener
-                $isEscaped = !str_contains($exprOpen, '!');
+                $isEscaped = $exprOpen === '{{';
 
                 $phpOutput = $isEscaped
                     ? "<?= \\MonkeysLegion\\Template\\Support\\Escaper::attr({$exprContent}) ?>"
@@ -821,9 +746,8 @@ class Compiler implements CompilerInterface
      */
     private function compileRawEchoes(string $php): string
     {
-        // Support { ! ! ... ! ! }
         return (string)preg_replace_callback(
-            '/\{\s*!\s*!\s*(.+?)\s*!\s*!\s*\}/s',
+            '/\{!!\s*(.+?)\s*!!\}/s',
             function (array $m): string {
                 $content = $m[1];
                 if ($this->strictMode) {
@@ -878,28 +802,28 @@ class Compiler implements CompilerInterface
     /**
      * Compile control structures (if, elseif, else, endif).
      *
-     * Supports both standalone and inline usage:
+     * We only compile directives that appear standalone on their own line:
      *   `@if(...)`
      *   `@elseif(...)`
      *   `@else`
      *   `@endif`
+     *
+     * This avoids the nested-parentheses bug and stray ")" characters.
      */
     private function compileConditionals(string $php): string
     {
-        // Recursive pattern for balanced parentheses
-        $expr = '\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)';
-
         // @if (condition)
-        $php = (string)preg_replace_callback(
-            "/(?<!@)@if\b{$expr}/sx",
-            fn($m) => "<?php if ({$m[1]}): ?>",
+        // @if($slots->has('head'))
+        $php = (string)preg_replace(
+            '/^[ \t]*@if\s*\((.*)\)\s*$/m',
+            '<?php if ($1): ?>',
             $php
         );
 
         // @elseif (condition)
-        $php = (string)preg_replace_callback(
-            "/(?<!@)@elseif\b{$expr}/sx",
-            fn($m) => "<?php elseif ({$m[1]}): ?>",
+        $php = (string)preg_replace(
+            '/^[ \t]*@elseif\s*\((.*)\)\s*$/m',
+            '<?php elseif ($1): ?>',
             $php
         );
 
@@ -914,9 +838,6 @@ class Compiler implements CompilerInterface
      */
     private function compileConditionalsSugar(string $php): string
     {
-        // Recursive pattern for balanced parentheses
-        $expr = '\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)';
-
         // @unless(cond) -> if (! (cond))
         $php = (string)preg_replace('/^[ \t]*@unless\s*\((.*)\)\s*$/m', '<?php if (! ($1)): ?>', $php);
 
@@ -941,21 +862,28 @@ class Compiler implements CompilerInterface
     private function compileLoops(string $php): string
     {
         // Support nested parentheses in loop headers
-        // Use negative lookbehind (?<!@) to ignore escaped @@directives
-        $foreachPattern = '/(?<!@)\@foreach\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx';
-        $forPattern     = '/(?<!@)\@for\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx';
-        $whilePattern   = '/(?<!@)\@while\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/sx';
+        $foreachPattern = '/\@foreach\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
+        $forPattern     = '/\@for\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
+        $whilePattern   = '/\@while\s*\(\s*( (?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )* )\s*\)/x';
 
         // @foreach with $loop variable
+        // We need to manage the stack.
+        // We'll wrap the loop in a closure or just use variable stack management inline?
+        // Inline is more performant but verbose PHP.
+        // Let's use the static helper Loop::start()
+
         $php = (string)preg_replace_callback($foreachPattern, function ($m) {
-            $expression = $m[1];
-            $newlines = substr_count($m[0], "\n");
-            
-            if (preg_match('/^(.*)\s+as\s+(.*)$/is', $expression, $parts)) {
-                $iterable = $parts[1];
-                return "<?php \$__currentLoopData = {$iterable}; \$this->addLoop(\$__currentLoopData); foreach(\$__currentLoopData as {$parts[2]}): \$loop = \$this->getLastLoop(); ?>" . str_repeat("\n", $newlines);
+            $expression = $m[1]; // e.g. "$users as $user"
+            // We need to pass the "list" to Loop::start.
+            // But we only have "$users as $user". We need to extract "$users".
+            // Regex to split " as "
+            if (preg_match('/^(.*)\s+as\s+(.*)$/i', $expression, $parts)) {
+                $iterable = $parts[1]; // $users
+                // We start the loop
+                return "<?php \$__currentLoopData = {$iterable}; \$this->addLoop(\$__currentLoopData); foreach(\$__currentLoopData as {$parts[2]}): \$loop = \$this->getLastLoop(); ?>";
             }
-            return "<?php foreach({$expression}): ?>" . str_repeat("\n", $newlines);
+            // Fallback if regex fails (unlikely for valid foreach)
+            return "<?php foreach({$expression}): ?>";
         }, $php);
 
         // End foreach
@@ -1052,26 +980,26 @@ class Compiler implements CompilerInterface
     {
         // @stack('name') -> yieldPush('name')
         $php = (string)preg_replace_callback(
-            '/(?<!@)@stack\([\'"](.+?)[\'"]\)/',
+            '/@stack\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?= \$this->yieldPush('{$m[1]}') ?>",
             $php
         );
 
         // @push('name')
         $php = (string)preg_replace_callback(
-            '/(?<!@)@push\([\'"](.+?)[\'"]\)/',
+            '/@push\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?php \$this->startPush('{$m[1]}'); ?>",
             $php
         );
-        $php = (string)preg_replace('/(?<!@)@endpush\b/', "<?php \$this->stopPush(); ?>", $php);
+        $php = (string)preg_replace('/@endpush\b/', "<?php \$this->stopPush(); ?>", $php);
 
         // @prepend('name')
         $php = (string)preg_replace_callback(
-            '/(?<!@)@prepend\([\'"](.+?)[\'"]\)/',
+            '/@prepend\([\'"](.+?)[\'"]\)/',
             fn($m) => "<?php \$this->startPrepend('{$m[1]}'); ?>",
             $php
         );
-        $php = (string)preg_replace('/(?<!@)@endprepend\b/', "<?php \$this->stopPrepend(); ?>", $php);
+        $php = (string)preg_replace('/@endprepend\b/', "<?php \$this->stopPrepend(); ?>", $php);
 
         return $php;
     }
@@ -1230,17 +1158,10 @@ class Compiler implements CompilerInterface
      */
     private function compilePhpBlocks(string $php): string
     {
-        // Handle inline @php(...)
-        $php = (string)preg_replace_callback(
-            '/@php\s*\((.*?)\)/s',
-            fn(array $m) => "<?php {$m[1]}; ?>",
-            $php
-        );
-
-        // Replace @php with opening PHP tag (support block syntax)
+        // Replace @php with opening PHP tag (support inline)
         $php = (string)preg_replace('/@php\b/', '<?php', $php);
 
-        // Replace @endphp with closing PHP tag (support block syntax)
+        // Replace @endphp with closing PHP tag (support inline)
         $php = (string)preg_replace('/@endphp\b/', '?>', $php);
 
         return $php;
@@ -1922,5 +1843,74 @@ class Compiler implements CompilerInterface
         );
 
         return $php;
+    }
+
+    /**
+     * Validate directive balance and basic syntax before compilation.
+     *
+     * Checks for unclosed block directives and reports them as ParseException.
+     */
+    private function validateDirectiveBalance(string $source, string $path): void
+    {
+        if (!$this->enableLinting) {
+            return;
+        }
+
+        // Check for common directive balance issues
+        $pairs = [
+            '@if'          => '@endif',
+            '@foreach'     => '@endforeach',
+            '@for'         => '@endfor',
+            '@while'       => '@endwhile',
+            '@switch'      => '@endswitch',
+            '@unless'      => '@endunless',
+            '@isset'       => '@endisset',
+            '@forelse'     => '@endforelse',
+            '@verbatim'    => '@endverbatim',
+            '@php'         => '@endphp',
+            '@once'        => '@endonce',
+            '@fragment'    => '@endfragment',
+            '@teleport'    => '@endteleport',
+            '@cache'       => '@endcache',
+            '@can'         => '@endcan',
+            '@cannot'      => '@endcannot',
+            '@auth'        => '@endauth',
+            '@guest'       => '@endguest',
+        ];
+
+        foreach ($pairs as $open => $close) {
+            // Use negative lookbehind to ignore escaped directives (@@)
+            $escapedOpen = preg_quote($open, '/');
+
+            if ($open === '@php') {
+                // Only count block @php (followed by whitespace/newline/EOF), not inline @php(expr)
+                $openCount  = preg_match_all('/(?<!@)' . $escapedOpen . '(?!\(|[a-zA-Z])/', $source);
+            } else {
+                $openCount  = preg_match_all('/(?<!@)' . $escapedOpen . '(?![a-zA-Z])/', $source);
+            }
+
+            $closeCount = preg_match_all('/(?<!@)' . preg_quote($close, '/') . '(?![a-zA-Z])/', $source);
+
+            if ($openCount > $closeCount) {
+                $line = $this->findDirectiveLine($source, $open);
+                throw new ParseException(
+                    "Unclosed directive: {$open} (found {$openCount} opening, {$closeCount} closing)",
+                    $path,
+                    $line
+                );
+            }
+        }
+    }
+
+    /**
+     * Find the line number of the first occurrence of a directive.
+     */
+    private function findDirectiveLine(string $source, string $directive): int
+    {
+        $pos = strpos($source, $directive);
+        if ($pos === false) {
+            return 1;
+        }
+        return substr_count($source, "\n", 0, $pos) + 1;
     }
 }

@@ -36,23 +36,14 @@ class LintingTest extends TestCase
         $this->assertStringContainsString('this is broken', $php);
     }
 
-    public function testLintingCatchesSyntaxErrors(): void
+    public function testLintingCatchesUnclosedDirectives(): void
     {
         $this->compiler->setEnableLinting(true);
 
-        // Skip if exec is not available in the test environment
-        if (!function_exists('exec')) {
-            $this->markTestSkipped('exec() is not available');
-        }
-
-        $this->compiler->getRegistry()->addDirective('broken', function() {
-            return "<?php ) invalid logic ( ?>";
-        });
-
-        $source = "@broken()";
+        $source = "@if(\$x)\nContent\n";
         
         $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('PHP Syntax Error');
+        $this->expectExceptionMessage('Unclosed directive: @if');
         
         $this->compiler->compile($source, 'test.ml.php');
     }

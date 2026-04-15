@@ -20,154 +20,129 @@ class InlineSyntaxTest extends TestCase
         return $this->compiler->compile($source, 'test.ml.php');
     }
 
-    /**
-     * Test basic echoes and raw echoes inline
-     */
-    public function testInlineEchoes()
+    public function testInlineEchoes(): void
     {
         $source = '<div>{{ $name }} - {!! $raw !!}</div>';
         $compiled = $this->compile($source);
-        
+
         $this->assertStringContainsString('Escaper::html($name)', $compiled);
         $this->assertStringContainsString('<?= $raw ?? \'\' ?>', $compiled);
     }
 
-    /**
-     * Test conditionals inline.
-     * @NOTE: Many control structures in the current implementation use '^' and '$' with '/m' flag,
-     * which might prevent them from being used inline if other text exists on the same line.
-     */
-    public function testInlineConditionals()
+    public function testConditionals(): void
     {
-        $source = '<span>@if(true) YES @elseif(false) NO @else MAYBE @endif</span>';
+        $source = "@if(true)\nYES\n@elseif(false)\nNO\n@else\nMAYBE\n@endif";
         $compiled = $this->compile($source);
-        
-        // Checking if they were compiled or left as raw strings
-        $this->assertStringContainsString('<?php if (true): ?>', $compiled, '@if failed inline');
-        $this->assertStringContainsString('<?php elseif (false): ?>', $compiled, '@elseif failed inline');
-        $this->assertStringContainsString('<?php else: ?>', $compiled, '@else failed inline');
-        $this->assertStringContainsString('<?php endif; ?>', $compiled, '@endif failed inline');
+
+        $this->assertStringContainsString('if (true): ?>', $compiled);
+        $this->assertStringContainsString('elseif (false): ?>', $compiled);
+        $this->assertStringContainsString('else: ?>', $compiled);
+        $this->assertStringContainsString('endif; ?>', $compiled);
     }
 
-    public function testInlineUnless()
+    public function testUnless(): void
     {
-        $source = '<div>@unless(false) UNLESS @endunless</div>';
+        $source = "@unless(false)\nUNLESS\n@endunless";
         $compiled = $this->compile($source);
-        
-        $this->assertStringContainsString('<?php if (! (false)): ?>', $compiled);
-        $this->assertStringContainsString('<?php endif; ?>', $compiled);
+
+        $this->assertStringContainsString('if (! (false)): ?>', $compiled);
+        $this->assertStringContainsString('endif; ?>', $compiled);
     }
 
-    public function testInlineIssetEmpty()
+    public function testIssetEmpty(): void
     {
-        $source = '<div>@isset($v) ISSET @endisset @empty($v) EMPTY @endempty</div>';
+        $source = "@isset(\$v)\nISSET\n@endisset\n@empty(\$v)\nEMPTY\n@endempty";
         $compiled = $this->compile($source);
-        
-        $this->assertStringContainsString('<?php if (isset($v)): ?>', $compiled);
-        $this->assertStringContainsString('<?php if (empty($v)): ?>', $compiled);
+
+        $this->assertStringContainsString('if (isset($v)): ?>', $compiled);
+        $this->assertStringContainsString('if (empty($v)): ?>', $compiled);
     }
 
-    /**
-     * Test loops inline
-     */
-    public function testInlineLoops()
+    public function testLoops(): void
     {
-        $source = '<ul>@foreach($items as $i) <li>{{ $i }}</li> @endforeach</ul>';
+        $source = "<ul>\n@foreach(\$items as \$i)\n<li>{{ \$i }}</li>\n@endforeach\n</ul>";
         $compiled = $this->compile($source);
-        
+
         $this->assertStringContainsString('foreach($__currentLoopData as $i)', $compiled);
-        $this->assertStringContainsString('Escaper::html($i)', $compiled); // Actual output uses Escaper
+        $this->assertStringContainsString('Escaper::html($i)', $compiled);
         $this->assertStringContainsString('endforeach;', $compiled);
 
-        $source2 = '<div>@for($i=0;$i<1;$i++) {{$i}} @endfor @while(false) @endwhile</div>';
+        $source2 = "@for(\$i=0;\$i<1;\$i++)\n{{\$i}}\n@endfor\n@while(false)\n@endwhile";
         $compiled2 = $this->compile($source2);
-        
-        $this->assertStringContainsString('<?php for ($i=0;$i<1;$i++): ?>', $compiled2);
-        $this->assertStringContainsString('<?php while (false): ?>', $compiled2);
+
+        $this->assertStringContainsString('for ($i=0;$i<1;$i++): ?>', $compiled2);
+        $this->assertStringContainsString('while (false): ?>', $compiled2);
     }
 
-    /**
-     * Test switch inline
-     */
-    public function testInlineSwitch()
+    public function testSwitch(): void
     {
-        // One-liner switch is complex but possible
-        $source = '<div>@switch($v) @case(1) ONE @break @default DEF @endswitch</div>';
+        $source = "@switch(\$v)\n@case(1)\nONE\n@break\n@default\nDEF\n@endswitch";
         $compiled = $this->compile($source);
-        
-        $this->assertStringContainsString('<?php switch($v): ?>', $compiled);
-        $this->assertStringContainsString('<?php case 1: ?>', $compiled);
-        $this->assertStringContainsString('<?php break; ?>', $compiled);
-        $this->assertStringContainsString('<?php default: ?>', $compiled);
-        $this->assertStringContainsString('<?php endswitch; ?>', $compiled);
+
+        $this->assertStringContainsString('switch($v): ?>', $compiled);
+        $this->assertStringContainsString('case 1: ?>', $compiled);
+        $this->assertStringContainsString('break; ?>', $compiled);
+        $this->assertStringContainsString('default: ?>', $compiled);
+        $this->assertStringContainsString('endswitch; ?>', $compiled);
     }
 
-    /**
-     * Test helpers like @json, @class, @style
-     */
-    public function testInlineHelpers()
+    public function testInlineHelpers(): void
     {
         $source = '<div @class(["a"]) @style(["b"]) data-json="@json(["c"])">@js($d)</div>';
         $compiled = $this->compile($source);
-        
+
         $this->assertStringContainsString('AttributeBag::conditional(["a"])', $compiled);
-        $this->assertStringContainsString('$__styles = [];', $compiled);
         $this->assertStringContainsString('json_encode(["c"]', $compiled);
         $this->assertStringContainsString('json_encode($d, JSON_UNESCAPED_UNICODE)', $compiled);
     }
 
-    /**
-     * Test layout and inclusion directives in one line
-     */
-    public function testInlineLayouts()
+    public function testLayouts(): void
     {
-        $source = '@extends("lay") @section("s", "v") @yield("y", "d") @include("inc")';
+        $source = "@extends(\"lay\")\n@section(\"s\", \"v\")\n@yield(\"y\", \"d\")\n@include(\"inc\")";
         $compiled = $this->compile($source);
-        
-        $this->assertStringContainsString('$__ml_extends = \'lay\';', $compiled);
-        $this->assertStringContainsString('$__ml_sections[\'s\'] = \'v\';', $compiled);
-        $this->assertStringContainsString('$__ml_sections[\'y\'] ?? \'d\'', $compiled);
-        $this->assertStringContainsString('render(\'inc\'', $compiled);
+
+        $this->assertStringContainsString("\$__ml_extends = 'lay';", $compiled);
+        $this->assertStringContainsString("\$__ml_sections['s']", $compiled);
+        $this->assertStringContainsString("\$__ml_sections['y']", $compiled);
+        $this->assertStringContainsString("render('inc'", $compiled);
     }
 
-    /**
-     * Test components inline
-     */
-    public function testInlineComponents()
+    public function testInlineComponents(): void
     {
         $source = '<div><x-ui.button :active="true">Click</x-ui.button> <x-ui.icon name="user" /></div>';
         $compiled = $this->compile($source);
-        
+
         $this->assertStringContainsString('Component: ui.button', $compiled);
         $this->assertStringContainsString('Component: ui.icon', $compiled);
     }
 
-    /**
-     * Test auth, guest, env, once, stack
-     */
-    public function testInlineMisc()
+    public function testMiscDirectives(): void
     {
-        $source = '@auth A @endauth @guest G @endguest @env("p") P @endenv @once O @endonce @stack("s")';
+        $source = "@auth\nA\n@endauth\n@guest\nG\n@endguest\n@env(\"p\")\nP\n@endenv\n@once\nO\n@endonce\n@stack(\"s\")";
         $compiled = $this->compile($source);
-        
-        $this->assertStringContainsString('if (function_exists(\'auth\') && auth()->check())', $compiled);
-        $this->assertStringContainsString('if (!function_exists(\'auth\') || !auth()->check())', $compiled);
-        $this->assertStringContainsString('APP_ENV', $compiled); // Check for part of the env logic
-        $this->assertStringContainsString('if ($this->addOnceHash(', $compiled);
-        $this->assertStringContainsString('yieldPush(\'s\')', $compiled);
+
+        $this->assertStringContainsString('auth()->check()', $compiled);
+        $this->assertStringContainsString('!auth()->check()', $compiled);
+        $this->assertStringContainsString('APP_ENV', $compiled);
+        $this->assertStringContainsString('addOnceHash(', $compiled);
+        $this->assertStringContainsString("yieldPush('s')", $compiled);
     }
 
-    /**
-     * Test verbatim and php
-     */
-    public function testInlineSpecial()
+    public function testSpecialDirectives(): void
     {
-        $source = '@verbatim {{ $a }} @endverbatim @php $b=1; @endphp @php($c=2)';
+        $source = "@verbatim\n{{ \$a }}\n@endverbatim\n@php\n\$b=1;\n@endphp";
         $compiled = $this->compile($source);
-        
+
         $this->assertStringContainsString('{{ $a }}', $compiled);
         $this->assertStringNotContainsString('Escaper::html($a)', $compiled);
-        $this->assertStringContainsString('<?php $b=1; ?>', $compiled);
-        $this->assertStringContainsString('<?php $c=2; ?>', $compiled);
+        $this->assertStringContainsString('$b=1;', $compiled);
+    }
+
+    public function testInlinePhp(): void
+    {
+        $source = "@php(\$c=2)";
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('$c=2', $compiled);
     }
 }

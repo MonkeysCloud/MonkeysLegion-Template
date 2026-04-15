@@ -32,7 +32,7 @@ class ViewException extends RuntimeException
     /** @phpstan-ignore-next-line constructor.unusedParameter */
     public function __construct(
         string $message,
-        int $code = 0,
+        int $currCode = 0,
         int $severity = 1,
         string $filename = __FILE__,
         int $line = __LINE__,
