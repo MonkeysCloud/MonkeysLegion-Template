@@ -15,9 +15,9 @@ use Throwable;
 
 final class Renderer
 {
-    private \MonkeysLegion\Template\Contracts\ParserInterface $parser;
-    private \MonkeysLegion\Template\Contracts\CompilerInterface $compiler;
-    private \MonkeysLegion\Template\Contracts\LoaderInterface $loader;
+    private ParserInterface $parser;
+    private CompilerInterface $compiler;
+    private LoaderInterface $loader;
     private bool $cacheEnabled;
     private string $cacheDir;
     /** @var array<string, list<string>> */
@@ -57,9 +57,9 @@ final class Renderer
     private ?PsrCacheInterface $fragmentCache = null;
 
     public function __construct(
-        \MonkeysLegion\Template\Contracts\ParserInterface $parser,
-        \MonkeysLegion\Template\Contracts\CompilerInterface $compiler,
-        \MonkeysLegion\Template\Contracts\LoaderInterface $loader,
+        ParserInterface $parser,
+        CompilerInterface $compiler,
+        LoaderInterface $loader,
         bool $cacheEnabled = true,
         string $cacheDir = '',
         private ?\MonkeysLegion\Template\Support\DirectiveRegistry $registry = null,
@@ -69,7 +69,7 @@ final class Renderer
         $this->compiler     = $compiler;
         $this->loader       = $loader;
         $this->cacheEnabled = $cacheEnabled;
-        $this->registry     = $registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
+        $this->registry     = $registry ?? new DirectiveRegistry();
         $this->cacheDir     = $cacheDir !== ''
             ? rtrim($cacheDir, DIRECTORY_SEPARATOR)
             : (function_exists('base_path')
@@ -125,6 +125,10 @@ final class Renderer
      */
     public function render(string $__name, array $__data = []): string
     {
+        if (!$isInternal) {
+            $this->sections = [];
+        }
+
         try {
             // Dispatch rendering event (pre-render)
             $__renderingEvent = new Events\ViewRendering($__name, $__data);
@@ -207,7 +211,6 @@ final class Renderer
                 @unlink($__compiledPath);
             }
         } catch (Throwable $e) {
-            unset($GLOBALS['__ml_attrs'], $GLOBALS['__data']);
             throw $e;
         }
     }
@@ -292,23 +295,13 @@ final class Renderer
             $passedAttrs = $__data;
             unset($passedAttrs['slots']);
 
-            // Instantiate AttributeBag with passed attributes
             $attributeBag = new \MonkeysLegion\Template\Support\AttributeBag($passedAttrs);
             $passedAttrs['attributes'] = $attributeBag;
 
             $scope->createIsolatedScope($passedAttrs, $props);
             $__compiledPath = $this->getCompiledPathForComponent($__path);
 
-            if ($this->cacheEnabled) {
-                if (!is_dir($this->cacheDir)) {
-                    mkdir($this->cacheDir, 0755, true);
-                }
-                if (!is_file($__compiledPath) || filemtime($__path) > filemtime($__compiledPath)) {
-                    $cleanSource = $this->parser->removePropsDirectives($__source);
-                    $php = $this->compiler->compile($cleanSource, $__path);
-                    file_put_contents($__compiledPath, $php);
-                }
-            } else {
+            if (!$this->cacheEnabled || !is_file($__compiledPath) || filemtime($__path) > filemtime($__compiledPath)) {
                 if (!is_dir($this->cacheDir)) {
                     mkdir($this->cacheDir, 0755, true);
                 }
@@ -320,7 +313,7 @@ final class Renderer
             $scopedData = $scope->getCurrentScope();
             $scopedData['slots'] = $slots;
             $scopedData['slot']  = $slots->getDefault();
-            // Ensure $attrs is available as an alias for $attributes
+            $__ml_scope = &$scope;
             if (isset($scopedData['attributes'])) {
                 $scopedData['attrs'] = $scopedData['attributes'];
             }
@@ -330,12 +323,17 @@ final class Renderer
 
             $output = ob_get_clean();
             if ($output === false) {
-                throw new RuntimeException("Component buffer closed unexpectedly: {$__path}");
+                throw new RuntimeException("Component buffer closed: {$__path}");
             }
             return $output;
         } catch (Throwable $e) {
             $this->handleViewException($e, $level);
         } finally {
+            // Ensure the output buffer is cleaned up even if an exception occurs
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+
             if (isset($scope)) {
                 $scope->popScope();
             }
@@ -635,7 +633,7 @@ final class Renderer
         return $this->registry ?? new \MonkeysLegion\Template\Support\DirectiveRegistry();
     }
 
-    public function setRegistry(\MonkeysLegion\Template\Support\DirectiveRegistry $registry): void
+    public function setRegistry(DirectiveRegistry $registry): void
     {
         $this->registry = $registry;
     }
