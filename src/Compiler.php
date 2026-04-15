@@ -1846,71 +1846,117 @@ class Compiler implements CompilerInterface
     }
 
     /**
-     * Validate directive balance and basic syntax before compilation.
+     * Validate directive balance before compilation.
      *
-     * Checks for unclosed block directives and reports them as ParseException.
+     * Uses a single regex pass to count all directive occurrences,
+     * then checks opening/closing balance for block directives.
+     *
+     * @var array<string, string> Opening → closing directive map (static, built once)
      */
+    private static ?array $directivePairs = null;
+
+    private static function getDirectivePairs(): array
+    {
+        return self::$directivePairs ??= [
+            // Control structures
+            'if'             => 'endif',
+            'unless'         => 'endunless',
+            'isset'          => 'endisset',
+            // Note: @empty excluded — dual purpose as standalone block AND mid-block in @forelse
+            'switch'         => 'endswitch',
+            // Loops
+            'foreach'        => 'endforeach',
+            'forelse'        => 'endforelse',
+            'for'            => 'endfor',
+            'while'          => 'endwhile',
+            // Auth & authorization
+            'auth'           => 'endauth',
+            'guest'          => 'endguest',
+            'can'            => 'endcan',
+            'cannot'         => 'endcannot',
+            // Content blocks
+            'section'        => 'endsection',
+            'slot'           => 'endslot',
+            'push'           => 'endpush',
+            'prepend'        => 'endprepend',
+            'pushOnce'       => 'endPushOnce',
+            'once'           => 'endonce',
+            'verbatim'       => 'endverbatim',
+            'php'            => 'endphp',
+            'macro'          => 'endmacro',
+            // Environment & framework
+            'env'            => 'endenv',
+            'production'     => 'endproduction',
+            'session'        => 'endsession',
+            'error'          => 'enderror',
+            'hasSection'     => 'endhasSection',
+            'sectionMissing' => 'endsectionMissing',
+            // HTMX / advanced
+            'fragment'       => 'endfragment',
+            'teleport'       => 'endteleport',
+            'persist'        => 'endpersist',
+            'cache'          => 'endcache',
+            'autoescape'     => 'endautoescape',
+        ];
+    }
+
     private function validateDirectiveBalance(string $source, string $path): void
     {
         if (!$this->enableLinting) {
             return;
         }
 
-        // Check for common directive balance issues
-        $pairs = [
-            '@if'          => '@endif',
-            '@foreach'     => '@endforeach',
-            '@for'         => '@endfor',
-            '@while'       => '@endwhile',
-            '@switch'      => '@endswitch',
-            '@unless'      => '@endunless',
-            '@isset'       => '@endisset',
-            '@forelse'     => '@endforelse',
-            '@verbatim'    => '@endverbatim',
-            '@php'         => '@endphp',
-            '@once'        => '@endonce',
-            '@fragment'    => '@endfragment',
-            '@teleport'    => '@endteleport',
-            '@cache'       => '@endcache',
-            '@can'         => '@endcan',
-            '@cannot'      => '@endcannot',
-            '@auth'        => '@endauth',
-            '@guest'       => '@endguest',
-        ];
+        $pairs = self::getDirectivePairs();
 
+        // Build set of all directive names we care about (open + close)
+        $allNames = [];
         foreach ($pairs as $open => $close) {
-            // Use negative lookbehind to ignore escaped directives (@@)
-            $escapedOpen = preg_quote($open, '/');
+            $allNames[$open]  = true;
+            $allNames[$close] = true;
+        }
 
-            if ($open === '@php') {
-                // Only count block @php (followed by whitespace/newline/EOF), not inline @php(expr)
-                $openCount  = preg_match_all('/(?<!@)' . $escapedOpen . '(?!\(|[a-zA-Z])/', $source);
-            } else {
-                $openCount  = preg_match_all('/(?<!@)' . $escapedOpen . '(?![a-zA-Z])/', $source);
+        // Single regex pass: find all @directiveName occurrences (not escaped with @@)
+        // This is O(n) instead of O(n * numPairs)
+        $counts = [];
+        if (preg_match_all('/(?<!@)@([a-zA-Z]+)/', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[1] as [$name, $offset]) {
+                if (!isset($allNames[$name])) {
+                    continue;
+                }
+                // Skip inline @php(expr) — only block @php needs @endphp
+                if ($name === 'php') {
+                    $afterPos = $offset + 3; // length of 'php'
+                    if ($afterPos < strlen($source) && $source[$afterPos] === '(') {
+                        continue;
+                    }
+                }
+                // Skip shorthand @section('name', 'value') — no @endsection needed
+                if ($name === 'section') {
+                    $afterPos = $offset + 7; // length of 'section'
+                    if (preg_match('/^\(\s*["\'][^"\']+["\']\s*,/', substr($source, $afterPos, 80))) {
+                        continue;
+                    }
+                }
+                $counts[$name] = ($counts[$name] ?? 0) + 1;
             }
+        }
 
-            $closeCount = preg_match_all('/(?<!@)' . preg_quote($close, '/') . '(?![a-zA-Z])/', $source);
+        // Check balance for each pair
+        foreach ($pairs as $open => $close) {
+            $openCount  = $counts[$open]  ?? 0;
+            $closeCount = $counts[$close] ?? 0;
 
             if ($openCount > $closeCount) {
-                $line = $this->findDirectiveLine($source, $open);
+                // Find line number for error reporting (only on failure path)
+                $pos = strpos($source, '@' . $open);
+                $line = $pos !== false ? substr_count($source, "\n", 0, $pos) + 1 : 1;
+
                 throw new ParseException(
-                    "Unclosed directive: {$open} (found {$openCount} opening, {$closeCount} closing)",
+                    "Unclosed directive: @{$open} (found {$openCount} opening, {$closeCount} closing)",
                     $path,
                     $line
                 );
             }
         }
-    }
-
-    /**
-     * Find the line number of the first occurrence of a directive.
-     */
-    private function findDirectiveLine(string $source, string $directive): int
-    {
-        $pos = strpos($source, $directive);
-        if ($pos === false) {
-            return 1;
-        }
-        return substr_count($source, "\n", 0, $pos) + 1;
     }
 }
