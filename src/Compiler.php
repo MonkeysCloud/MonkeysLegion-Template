@@ -1909,6 +1909,10 @@ class Compiler implements CompilerInterface
             return;
         }
 
+        // Strip {{-- --}} comments before counting directives.
+        // Directive names inside comments are not real and must be ignored.
+        $source = (string) preg_replace('/\{\{--.*?--\}\}/s', '', $source);
+
         $pairs = self::getDirectivePairs();
 
         // Build set of all directive names we care about (open + close)
