@@ -445,7 +445,14 @@ final class Renderer
         // Handle shorthand @section('name', 'value') — no @endsection needed
         $shorthandPattern = '/@section\(\s*(?:\'|")(?<name>[^"\']+)(?:\'|")\s*,\s*(?<value>(?:[^()]+|\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\))*)\s*\)/';
         $source = (string)preg_replace_callback($shorthandPattern, function (array $m) use (&$sections) {
-            $sections[$m['name']] = trim($m['value']);
+            $value = trim($m['value']);
+            // Simple quoted string: strip quotes and use as literal text
+            if (preg_match('/^["\'](.+)["\']$/', $value, $dq)) {
+                $sections[$m['name']] = $dq[1];
+            } else {
+                // PHP expression — wrap so it gets evaluated at runtime
+                $sections[$m['name']] = '<?= ' . $value . ' ?' . '>';
+            }
             return '';
         }, $source);
 
@@ -472,11 +479,15 @@ final class Renderer
             }
             // Use default value if provided, otherwise empty
             $default = isset($m['default']) && trim($m['default']) !== '' ? trim($m['default']) : '';
-            // Strip surrounding quotes from simple string defaults
-            if (preg_match('/^["\'](.+)["\']$/', $default, $dq)) {
-                $default = $dq[1];
+            if ($default === '') {
+                return '';
             }
-            return $default;
+            // Simple quoted string: strip quotes and use as literal text
+            if (preg_match('/^["\'](.+)["\']$/', $default, $dq)) {
+                return $dq[1];
+            }
+            // PHP expression — wrap so it gets evaluated at runtime
+            return '<?= ' . $default . ' ?' . '>';
         }, $source);
     }
     public function startPush(string $section): void {
