@@ -178,7 +178,30 @@ final class Renderer
                     throw new RuntimeException("Failed to read parent template: {$parentPath}");
                 }
 
+                // Preserve @push/@prepend/@pushOnce blocks from the child template.
+                // After extractSections(), $__raw contains leftover content outside
+                // @section blocks. This includes @push('stack') ... @endpush which
+                // must survive into the merged output for runtime compilation.
+                $childPushBlocks = '';
+                $pushPatterns = [
+                    '/@push\(\s*[\'"]([^"\']+)[\'"]\s*\)(.*?)@endpush/s',
+                    '/@prepend\(\s*[\'"]([^"\']+)[\'"]\s*\)(.*?)@endprepend/s',
+                    '/@pushOnce\s*\(\s*[\'"]([^"\']+)[\'"]\s*\)(.*?)@endPushOnce/s',
+                ];
+                foreach ($pushPatterns as $pattern) {
+                    if (preg_match_all($pattern, $__raw, $matches, PREG_SET_ORDER)) {
+                        foreach ($matches as $match) {
+                            $childPushBlocks .= $match[0] . "\n";
+                        }
+                    }
+                }
+
                 $__raw = $this->replaceYields($parentRaw, $sections);
+
+                // Append child push blocks so they compile and run in the merged template
+                if ($childPushBlocks !== '') {
+                    $__raw .= "\n" . $childPushBlocks;
+                }
             }
 
             if ($this->cacheEnabled) {
