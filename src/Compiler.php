@@ -1252,11 +1252,29 @@ class Compiler implements CompilerInterface
                 // Protect double-escaped @
                 $code = (string)preg_replace('/@@([a-zA-Z0-9_]+)/', '___MLVIEW_DOUBLE_AT___$1', $code);
 
-                // Replace template syntax
-                $code = str_replace('{{', '___MLVIEW_OPEN_CURLY___', $code);
-                $code = str_replace('}}', '___MLVIEW_CLOSE_CURLY___', $code);
-                $code = str_replace('{!!', '___MLVIEW_OPEN_RAW___', $code);
-                $code = str_replace('!!}', '___MLVIEW_CLOSE_RAW___', $code);
+                // Only protect template syntax that looks like documentation examples
+                // (does NOT contain $ — real expressions like {{ $var->prop }} must pass through)
+                $code = (string)preg_replace_callback(
+                    '/\{\{\s*(.+?)\s*\}\}/s',
+                    static function (array $m): string {
+                        if (str_contains($m[1], '$')) {
+                            return $m[0]; // Real template expression — leave it
+                        }
+                        return '___MLVIEW_OPEN_CURLY___' . $m[1] . '___MLVIEW_CLOSE_CURLY___';
+                    },
+                    $code,
+                );
+                $code = (string)preg_replace_callback(
+                    '/\{!!\s*(.+?)\s*!!\}/s',
+                    static function (array $m): string {
+                        if (str_contains($m[1], '$')) {
+                            return $m[0]; // Real raw expression — leave it
+                        }
+                        return '___MLVIEW_OPEN_RAW___' . $m[1] . '___MLVIEW_CLOSE_RAW___';
+                    },
+                    $code,
+                );
+                // Comments are always protected (never dynamic)
                 $code = str_replace('{{--', '___MLVIEW_COMMENT_OPEN___', $code);
                 $code = str_replace('--}}', '___MLVIEW_COMMENT_CLOSE___', $code);
 
