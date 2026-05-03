@@ -812,17 +812,16 @@ class Compiler implements CompilerInterface
      */
     private function compileConditionals(string $php): string
     {
-        // @if (condition)
-        // @if($slots->has('head'))
+        // @if (condition) — supports inline: @if($x)<html>@endif
         $php = (string)preg_replace(
-            '/^[ \t]*@if\s*\((.*)\)\s*$/m',
+            '/@if\s*\((.+?)\)/s',
             '<?php if ($1): ?>',
             $php
         );
 
         // @elseif (condition)
         $php = (string)preg_replace(
-            '/^[ \t]*@elseif\s*\((.*)\)\s*$/m',
+            '/@elseif\s*\((.+?)\)/s',
             '<?php elseif ($1): ?>',
             $php
         );
@@ -839,18 +838,18 @@ class Compiler implements CompilerInterface
     private function compileConditionalsSugar(string $php): string
     {
         // @unless(cond) -> if (! (cond))
-        $php = (string)preg_replace('/^[ \t]*@unless\s*\((.*)\)\s*$/m', '<?php if (! ($1)): ?>', $php);
+        $php = (string)preg_replace('/@unless\s*\((.+?)\)/s', '<?php if (! ($1)): ?>', $php);
 
         // @isset(var) -> if (isset(var))
-        $php = (string)preg_replace('/^[ \t]*@isset\s*\((.*)\)\s*$/m', '<?php if (isset($1)): ?>', $php);
+        $php = (string)preg_replace('/@isset\s*\((.+?)\)/s', '<?php if (isset($1)): ?>', $php);
 
         // @empty(var) -> if (empty(var))
-        $php = (string)preg_replace('/^[ \t]*@empty\s*\((.*)\)\s*$/m', '<?php if (empty($1)): ?>', $php);
+        $php = (string)preg_replace('/@empty\s*\((.+?)\)/s', '<?php if (empty($1)): ?>', $php);
 
-        // @switch($var)
+        // @switch($var) — kept line-anchored (PHP alt syntax requires it)
         $php = (string)preg_replace('/^[ \t]*@switch\s*\((.*)\)\s*$/m', '<?php switch($1): ?>', $php);
 
-        // @case('val') - must close PHP tag so HTML content can be rendered
+        // @case('val') — kept line-anchored
         $php = (string)preg_replace('/^[ \t]*@case\s*\((.*)\)\s*$/m', '<?php case $1: ?>', $php);
 
         return $php;
@@ -940,8 +939,9 @@ class Compiler implements CompilerInterface
             array_keys($directives),
         );
 
-        // Pattern: match @directive at line boundaries with optional whitespace
-        $pattern = '/^[ \t]*@(' . implode('|', $escapedKeys) . ')\s*$/m';
+        // Pattern: match @directive anywhere (supports inline usage like @if(...)content@endif)
+        // \b prevents matching inside longer words (e.g. @endifoo)
+        $pattern = '/@(' . implode('|', $escapedKeys) . ')\b/';
 
         return (string) preg_replace_callback(
             $pattern,

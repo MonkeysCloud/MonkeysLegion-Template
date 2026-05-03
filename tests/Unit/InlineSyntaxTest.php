@@ -145,4 +145,56 @@ class InlineSyntaxTest extends TestCase
 
         $this->assertStringContainsString('$c=2', $compiled);
     }
+
+    /**
+     * Test that @if/@endif work on the same line (inline usage).
+     * Example: @if($x)<input type="hidden" value="1">@endif
+     */
+    public function testInlineIfEndif(): void
+    {
+        $source = '@if($show)<input type="hidden" name="x" value="1">@endif';
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('if ($show):', $compiled);
+        $this->assertStringContainsString('endif;', $compiled);
+        $this->assertStringContainsString('type="hidden"', $compiled);
+    }
+
+    public function testInlineIfElseEndif(): void
+    {
+        $source = '@if($a)YES@else NO@endif';
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('if ($a):', $compiled);
+        $this->assertStringContainsString('else:', $compiled);
+        $this->assertStringContainsString('endif;', $compiled);
+    }
+
+    public function testInlineElseifEndif(): void
+    {
+        $source = "@if(\$x)A@elseif(\$y)B@endif";
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('if ($x):', $compiled);
+        $this->assertStringContainsString('elseif ($y):', $compiled);
+        $this->assertStringContainsString('endif;', $compiled);
+    }
+
+    public function testInlineUnless(): void
+    {
+        $source = '@unless($hidden)<div>Visible</div>@endunless';
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('if (! ($hidden)):', $compiled);
+        $this->assertStringContainsString('endif;', $compiled);
+    }
+
+    public function testInlineIsset(): void
+    {
+        $source = '@isset($val)<span>{{ $val }}</span>@endisset';
+        $compiled = $this->compile($source);
+
+        $this->assertStringContainsString('if (isset($val)):', $compiled);
+        $this->assertStringContainsString('endif;', $compiled);
+    }
 }
