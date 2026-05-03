@@ -63,11 +63,14 @@ class Parser implements ParserInterface
      * Parse :class directive for conditional CSS classes
      *
      * Syntax: :class="['btn', 'active' => $isActive, $variant]"
+     *
+     * Skips JS framework bindings like $m-bind:class, v-bind:class, etc.
+     * Only matches standalone :class at attribute position (preceded by whitespace or tag start).
      */
     private function parseClassDirective(string $source): string
     {
         return (string)preg_replace_callback(
-            '/:class\s*=\s*"([^"]+)"/s',
+            '/(?<![a-zA-Z0-9_$-]):class\s*=\s*"([^"]+)"/s',
             function (array $m) {
                 $expression = $m[1];
                 // Remove any curly braces if present

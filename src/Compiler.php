@@ -620,15 +620,24 @@ class Compiler implements CompilerInterface
     }
 
     /**
-     * Process expressions in HTML attributes
+     * Process expressions in HTML attributes.
+     *
+     * Skips attributes prefixed with $m- (MonkeysJS) or v- (Vue) as these
+     * are client-side framework bindings, not PHP template expressions.
      */
     private function compileAttributeExpressions(string $php): string
     {
         return (string)preg_replace_callback(
             '/<([^>]+?)(\s+[a-zA-Z0-9_:-]+\s*=\s*["\'])([^"\']*?)(\{\{|\{!!)(.*?)(\}\}|!!\})([^"\']*?)(["\'])/s',
             function (array $m) {
-                $tagStart = $m[1];
                 $attrStart = $m[2];
+
+                // Skip JS framework reactive bindings ($m-bind:*, v-bind:*, etc.)
+                if (preg_match('/\s+\$m-/', $attrStart) || preg_match('/\s+v-/', $attrStart)) {
+                    return $m[0]; // Return unchanged
+                }
+
+                $tagStart = $m[1];
                 $beforeExpr = $m[3];
                 $exprOpen = $m[4];
                 $exprContent = $m[5];
