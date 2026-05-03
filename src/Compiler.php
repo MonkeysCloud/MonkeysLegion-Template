@@ -802,26 +802,30 @@ class Compiler implements CompilerInterface
     /**
      * Compile control structures (if, elseif, else, endif).
      *
-     * We only compile directives that appear standalone on their own line:
-     *   `@if(...)`
-     *   `@elseif(...)`
-     *   `@else`
-     *   `@endif`
+     * Supports nested parentheses in conditions:
+     *   `@if($crumb->isLink())`
+     *   `@if(count($items) > 0)`
+     *   `@elseif(str_contains($name, 'test'))`
      *
-     * This avoids the nested-parentheses bug and stray ")" characters.
+     * Uses recursive balanced-parenthesis matching (same pattern as
+     * @foreach, @dump, @breakIf, etc.) to avoid the lazy-match bug
+     * where (.+?) would stop at the first closing paren.
      */
     private function compileConditionals(string $php): string
     {
-        // @if (condition) — supports inline: @if($x)<html>@endif
+        // Balanced-parentheses pattern (same approach as @foreach, @dump, etc.)
+        $balancedParens = '(?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )*';
+
+        // @if (condition) — supports nested parens: @if($crumb->isLink())
         $php = (string)preg_replace(
-            '/@if\s*\((.+?)\)/s',
+            '/\@if\s*\(\s*( ' . $balancedParens . ' )\s*\)/x',
             '<?php if ($1): ?>',
             $php
         );
 
         // @elseif (condition)
         $php = (string)preg_replace(
-            '/@elseif\s*\((.+?)\)/s',
+            '/\@elseif\s*\(\s*( ' . $balancedParens . ' )\s*\)/x',
             '<?php elseif ($1): ?>',
             $php
         );
@@ -837,14 +841,17 @@ class Compiler implements CompilerInterface
      */
     private function compileConditionalsSugar(string $php): string
     {
+        // Balanced-parentheses pattern (same approach as @if, @foreach, etc.)
+        $balancedParens = '(?: [^()]+ | (\( (?: [^()]+ | (?2) )* \)) )*';
+
         // @unless(cond) -> if (! (cond))
-        $php = (string)preg_replace('/@unless\s*\((.+?)\)/s', '<?php if (! ($1)): ?>', $php);
+        $php = (string)preg_replace('/\@unless\s*\(\s*( ' . $balancedParens . ' )\s*\)/x', '<?php if (! ($1)): ?>', $php);
 
         // @isset(var) -> if (isset(var))
-        $php = (string)preg_replace('/@isset\s*\((.+?)\)/s', '<?php if (isset($1)): ?>', $php);
+        $php = (string)preg_replace('/\@isset\s*\(\s*( ' . $balancedParens . ' )\s*\)/x', '<?php if (isset($1)): ?>', $php);
 
         // @empty(var) -> if (empty(var))
-        $php = (string)preg_replace('/@empty\s*\((.+?)\)/s', '<?php if (empty($1)): ?>', $php);
+        $php = (string)preg_replace('/\@empty\s*\(\s*( ' . $balancedParens . ' )\s*\)/x', '<?php if (empty($1)): ?>', $php);
 
         // @switch($var) — kept line-anchored (PHP alt syntax requires it)
         $php = (string)preg_replace('/^[ \t]*@switch\s*\((.*)\)\s*$/m', '<?php switch($1): ?>', $php);
